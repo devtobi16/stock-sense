@@ -1,95 +1,109 @@
-const YahooFinance = require('yahoo-finance2').default;
-const yahooFinance = new YahooFinance();
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY || 'd969j21r01qsd323k0q0d969j21r01qsd323k0qg';
 
-/**
- * Fetches real-time quote and latest news for a given ticker.
- * @param {string} ticker 
- */
+async function fetchFinnhub(endpoint) {
+  const url = `https://finnhub.io/api/v1${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${FINNHUB_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Finnhub error: ${res.status}`);
+  return await res.json();
+}
+
+function getPastDate(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split('T')[0];
+}
+
 async function fetchTickerData(ticker) {
   try {
-    const quote = await yahooFinance.quote(ticker);
-    const search = await yahooFinance.search(ticker, { newsCount: 5 });
+    const today = new Date().toISOString().split('T')[0];
+    const oneWeekAgo = getPastDate(7);
+    
+    const [quote, news] = await Promise.all([
+      fetchFinnhub(`/quote?symbol=${ticker}`),
+      fetchFinnhub(`/company-news?symbol=${ticker}&from=${oneWeekAgo}&to=${today}`)
+    ]);
     
     return {
       ticker,
-      price: quote.regularMarketPrice,
-      changePct: quote.regularMarketChangePercent,
-      news: search.news.map(n => ({
-        title: n.title,
-        publisher: n.publisher,
-        link: n.link,
-        time: n.providerPublishTime
+      price: quote.c,
+      changePct: quote.dp,
+      news: (Array.isArray(news) ? news : []).slice(0, 5).map(n => ({
+        title: n.headline,
+        publisher: n.source,
+        link: n.url,
+        time: n.datetime * 1000
       }))
     };
   } catch (error) {
-    console.error(`Error fetching data for ${ticker}, using fallback:`, error.message);
-    const mockPrice = 150 + Math.random() * 50;
-    const isBull = Math.random() > 0.5;
-    return {
-      ticker,
-      price: mockPrice,
-      changePct: isBull ? Math.random() * 3 : -(Math.random() * 3),
-      news: [
-        { title: `${ticker} announces major strategic update for upcoming quarter`, publisher: 'Market Insights', link: '#', time: Date.now() - 3600000 },
-        { title: `Analysts adjust price targets for ${ticker} following sector trends`, publisher: 'Financial Times', link: '#', time: Date.now() - 7200000 }
-      ]
-    };
+    console.error(`Error fetching data for ${ticker}:`, error.message);
+    return null;
   }
 }
 
-/**
- * Fetches data for an array of tickers.
- * @param {string[]} tickers 
- */
 async function fetchMarketData(tickers) {
   const promises = tickers.map(t => fetchTickerData(t));
   const results = await Promise.all(promises);
   return results.filter(r => r !== null);
 }
 
-/**
- * Fetches top 5 trending symbols in the US market (filtering out crypto/futures if possible)
- */
 async function fetchTrendingSymbols() {
-  try {
-    const trending = await yahooFinance.trendingSymbols('US');
-    // Filter out symbols with '-' (like BTC-USD) or '=' (like EURUSD=X) to stick mostly to equities
-    const symbols = trending.quotes.map(q => q.symbol).filter(sym => !sym.includes('-') && !sym.includes('='));
-    if (symbols.length === 0) {
-      return ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN'];
-    }
-    return symbols.slice(0, 5);
-  } catch (error) {
-    console.error("Error fetching trending symbols:", error);
-    return ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN']; // Fallback
-  }
+  return ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN'];
 }
 
-/**
- * Fetches historical price data (last 90 days)
- */
 async function fetchHistoricalData(ticker) {
   try {
-    const d = new Date();
-    d.setDate(d.getDate() - 90);
-    const chart = await yahooFinance.chart(ticker, { period1: d, interval: '1d' });
-    return chart.quotes.map(q => ({
-      date: q.date,
-      close: q.close
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - (90 * 24 * 60 * 60);
+    const candles = await fetchFinnhub(`/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}`);
+    if (candles.s !== 'ok') return [];
+    return candles.t.map((t, i) => ({
+      date: new Date(t * 1000).toISOString(),
+      close: candles.c[i]
     }));
   } catch (error) {
-    console.error(`Error fetching historical for ${ticker}:`, error);
     return [];
   }
 }
 
 async function fetchDetailedQuote(ticker) {
   try {
-    const [quote, summary] = await Promise.all([
-      yahooFinance.quote(ticker),
-      yahooFinance.quoteSummary(ticker, { modules: ['summaryDetail', 'financialData', 'defaultKeyStatistics'] }).catch(() => ({}))
+    const [quote, profile, metrics] = await Promise.all([
+      fetchFinnhub(`/quote?symbol=${ticker}`),
+      fetchFinnhub(`/stock/profile2?symbol=${ticker}`),
+      fetchFinnhub(`/stock/metric?symbol=${ticker}&metric=all`)
     ]);
-    return { quote, summary };
+    
+    const metricData = metrics.metric || {};
+    return {
+      quote: {
+        symbol: ticker,
+        shortName: profile.name || ticker,
+        longName: profile.name || ticker,
+        regularMarketPrice: quote.c,
+        regularMarketChange: quote.d,
+        regularMarketChangePercent: quote.dp,
+        regularMarketVolume: 0,
+        regularMarketOpen: quote.o,
+        regularMarketDayHigh: quote.h,
+        regularMarketDayLow: quote.l,
+        regularMarketPreviousClose: quote.pc
+      },
+      summary: {
+        defaultKeyStatistics: {
+          sharesOutstanding: profile.shareOutstanding || 0,
+          beta: metricData.beta || 0,
+        },
+        financialData: {
+          currentPrice: quote.c,
+        },
+        summaryDetail: {
+          marketCap: profile.marketCapitalization ? profile.marketCapitalization * 1e6 : 0,
+          trailingPE: metricData.peBasicExclExtraTTM || 0,
+          fiftyTwoWeekHigh: metricData['52WeekHigh'] || 0,
+          fiftyTwoWeekLow: metricData['52WeekLow'] || 0,
+        }
+      }
+    };
   } catch (e) {
     return null;
   }
@@ -97,29 +111,19 @@ async function fetchDetailedQuote(ticker) {
 
 async function fetchGlobalIndices() {
   try {
-    const indices = ['^GSPC', '^IXIC', '^DJI', '^FTSE', '^N225'];
-    const quotes = await Promise.all(indices.map(i => yahooFinance.quote(i).catch(() => null)));
-    return quotes.filter(q => q !== null).map(q => ({
-      name: q.shortName || q.longName || q.symbol,
-      ticker: q.symbol,
-      value: q.regularMarketPrice,
-      change: q.regularMarketChange,
-      changePct: q.regularMarketChangePercent
-    }));
-  } catch (e) {
-    return [];
-  }
-}
-
-async function fetchGlobalNews() {
-  try {
-    const search = await yahooFinance.search('stock market', { newsCount: 15 });
-    return search.news.map(n => ({
-      id: n.uuid,
-      headline: n.title,
-      source: n.publisher,
-      time: n.providerPublishTime ? timeAgo(n.providerPublishTime) : 'Recent',
-      url: n.link
+    const indices = [
+      { t: 'SPY', name: 'S&P 500 ETF' },
+      { t: 'QQQ', name: 'Nasdaq ETF' },
+      { t: 'DIA', name: 'Dow Jones ETF' }
+    ];
+    const quotes = await Promise.all(indices.map(i => fetchFinnhub(`/quote?symbol=${i.t}`).catch(() => null)));
+    
+    return quotes.filter(q => q !== null).map((q, idx) => ({
+      name: indices[idx].name,
+      ticker: indices[idx].t,
+      value: q.c,
+      change: q.d,
+      changePct: q.dp
     }));
   } catch (e) {
     return [];
@@ -127,15 +131,7 @@ async function fetchGlobalNews() {
 }
 
 function timeAgo(rawTime) {
-  let ms;
-  if (rawTime instanceof Date) {
-    ms = Date.now() - rawTime.getTime();
-  } else if (typeof rawTime === 'number') {
-    // Could be unix seconds (10 digits) or ms (13 digits)
-    ms = rawTime > 1e12 ? Date.now() - rawTime : Date.now() - (rawTime * 1000);
-  } else {
-    return 'Recent';
-  }
+  const ms = Date.now() - (rawTime * 1000);
   const mins = Math.floor(ms / 60000);
   if (mins < 1) return 'Just now';
   if (mins < 60) return `${mins}m ago`;
@@ -144,25 +140,41 @@ function timeAgo(rawTime) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+async function fetchGlobalNews() {
+  try {
+    const news = await fetchFinnhub(`/news?category=general`);
+    return (Array.isArray(news) ? news : []).slice(0, 15).map(n => ({
+      id: n.id || String(Math.random()),
+      headline: n.headline,
+      source: n.source,
+      time: timeAgo(n.datetime),
+      url: n.url
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
 async function fetchEarningsCalendar(tickers) {
   try {
-    const promises = tickers.map(t => yahooFinance.quote(t).catch(() => null));
-    const quotes = await Promise.all(promises);
-    return quotes.filter(q => q && q.earningsTimestamp).map(q => {
-      // earningsTimestamp is a Date object from yahoo-finance2
-      const earnDate = q.earningsTimestamp instanceof Date 
-        ? q.earningsTimestamp 
-        : new Date(q.earningsTimestamp * 1000);
+    const today = new Date().toISOString().split('T')[0];
+    const nextMonth = getPastDate(-30);
+    const calendar = await fetchFinnhub(`/calendar/earnings?from=${today}&to=${nextMonth}`);
+    
+    const earnings = calendar.earningsCalendar || [];
+    const relevant = earnings.filter(e => tickers.includes(e.symbol));
+    
+    return relevant.map(q => {
+      const earnDate = new Date(q.date);
       return {
         ticker: q.symbol,
-        company: q.shortName || q.longName,
+        company: q.symbol,
         date: earnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         timestamp: Math.floor(earnDate.getTime() / 1000),
-        lastEPS: q.epsTrailingTwelveMonths || 0,
-        sector: q.epsForward || 0
+        lastEPS: q.epsActual || 0,
+        sector: q.epsEstimate || 0
       };
-    }).filter(e => e.timestamp > Date.now() / 1000 - 86400) // Keep today and future
-      .sort((a, b) => a.timestamp - b.timestamp);
+    }).sort((a, b) => a.timestamp - b.timestamp);
   } catch (e) {
     return [];
   }
@@ -170,54 +182,23 @@ async function fetchEarningsCalendar(tickers) {
 
 async function fetchResearchData(ticker) {
   try {
-    const modules = [
-      'summaryDetail', 
-      'financialData', 
-      'defaultKeyStatistics', 
-      'earnings', 
-      'secFilings'
-    ];
+    const detailed = await fetchDetailedQuote(ticker);
+    if (!detailed) return null;
     
-    const [quote, summary] = await Promise.all([
-      yahooFinance.quote(ticker),
-      yahooFinance.quoteSummary(ticker, { modules }).catch(() => ({}))
-    ]);
-
-    // Format historical earnings from summary.earnings.financialsChart.quarterly
-    const earningsHistory = summary?.earnings?.financialsChart?.quarterly || [];
-    
-    // Construct direct SEC EDGAR search link as fallback if secFilings are missing
     const edgarSearchUrl = `https://www.sec.gov/edgar/searchedgar/companysearch.html?CIK=${ticker}`;
-    
-    // Clean up filings
-    let filings = [];
-    if (summary?.secFilings?.filings) {
-      filings = summary.secFilings.filings
-        .filter(f => ['10-K', '10-Q', '8-K'].includes(f.type))
-        .map(f => ({
-          type: f.type,
-          date: new Date(f.date).toLocaleDateString(),
-          title: f.title,
-          url: f.edgarUrl
-        })).slice(0, 8); // Top 8 relevant filings
-    } 
-    
-    if (filings.length === 0) {
-      filings = [
-        { type: 'General', title: 'Search Latest SEC EDGAR Filings', url: edgarSearchUrl, date: 'Live' }
-      ];
-    }
+    const filings = [
+      { type: 'General', title: 'Search Latest SEC EDGAR Filings', url: edgarSearchUrl, date: 'Live' }
+    ];
 
     return {
-      quote,
-      financialData: summary?.financialData || {},
-      keyStatistics: summary?.defaultKeyStatistics || {},
-      summaryDetail: summary?.summaryDetail || {},
-      earningsHistory,
+      quote: detailed.quote,
+      financialData: detailed.summary.financialData,
+      keyStatistics: detailed.summary.defaultKeyStatistics,
+      summaryDetail: detailed.summary.summaryDetail,
+      earningsHistory: [],
       filings
     };
   } catch (error) {
-    console.error(`Error fetching research data for ${ticker}:`, error);
     return null;
   }
 }
