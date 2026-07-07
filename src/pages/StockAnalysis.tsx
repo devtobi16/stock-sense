@@ -135,7 +135,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
             ))}
           </div>
           <div className="flex gap-2">
-            <button onClick={handleAnalyze} disabled={loading} className="btn-primary flex items-center gap-2 whitespace-nowrap">
+            <button onClick={() => handleAnalyze()} disabled={loading} className="btn-primary flex items-center gap-2 whitespace-nowrap">
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
@@ -272,7 +272,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
               <Card className="p-4">
                 <CardHeader title="Technical Indicators" icon={<Activity size={14} />} />
                 <div className="grid grid-cols-1 gap-2.5 mt-1">
-                  {currentData.technicals.map((t) => (
+                  {currentData.technicals.map((t: any) => (
                     <div key={t.name} className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">{t.name}</span>
                       <div className="flex items-center gap-2">
@@ -313,7 +313,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
             <Card className="p-4">
               <CardHeader title="Key Statistics" icon={<Star size={14} />} />
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                {currentData.keyStats.map((stat) => (
+                {currentData.keyStats.map((stat: any) => (
                   <div key={stat.label} className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
                     <div className="text-[10px] text-slate-400 mb-1">{stat.label}</div>
                     <div className="text-sm font-bold text-slate-800">{stat.value}</div>
@@ -361,7 +361,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
                 </ResponsiveContainer>
               </div>
               <div className="flex gap-4 mt-3 pt-3 border-t border-slate-100 flex-wrap">
-                {currentData.technicals.slice(0, 4).map((t) => (
+                {currentData.technicals.slice(0, 4).map((t: any) => (
                   <div key={t.name} className="flex items-center gap-2">
                     <span className="text-xs text-slate-500">{t.name}</span>
                     <span className="text-xs font-semibold text-slate-700 mono">{t.value}</span>
@@ -394,7 +394,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
                   <p>
                     News sentiment analysis skews{' '}
                     <span className="text-green-600 font-semibold">strongly positive</span>, with{' '}
-                    <span className="text-slate-800 font-semibold">{currentData.news.filter(n => n.sentiment === 'Positive').length}</span>{' '}
+                    <span className="text-slate-800 font-semibold">{currentData.news.filter((n: any) => n.sentiment === 'Positive').length}</span>{' '}
                     positive articles out of the last {currentData.news.length} headlines tracked.
                     Institutional interest remains high, with multiple analyst upgrades in the past quarter.
                   </p>
@@ -423,7 +423,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
                   action={<button className="btn-ghost text-xs" onClick={() => onNavigate('financial-news')}>View All →</button>}
                 />
                 <div className="space-y-3">
-                  {currentData.news.map((item) => (
+                  {currentData.news.map((item: any) => (
                     <motion.div
                       key={item.id}
                       whileHover={{ x: 2 }}

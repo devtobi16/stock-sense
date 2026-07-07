@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Globe, TrendingUp, TrendingDown, BarChart3, Activity, AlertCircle, Newspaper } from 'lucide-react';
+import { Globe, TrendingUp, TrendingDown, BarChart3, Activity, AlertCircle } from 'lucide-react';
 import {
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis,
   Radar, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip

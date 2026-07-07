@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, FileText, Download, ExternalLink, Activity, Target, ShieldAlert, CheckCircle2, TrendingUp, TrendingDown, FileBadge } from 'lucide-react';
 import { Card, CardHeader, Badge } from '../components/ui';
 import type { PageId } from '../types';
