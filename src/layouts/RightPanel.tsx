@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Bot, Send, Sparkles, ChevronRight, Minimize2, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
+import { API_BASE_URL } from '../config';
 
 const SUGGESTED_PROMPTS = [
   'Explain recent movement',
@@ -44,7 +45,7 @@ export default function RightPanel() {
     setIsTyping(true);
 
     try {
-      const res = await fetch('http://localhost:3001/api/chat', {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

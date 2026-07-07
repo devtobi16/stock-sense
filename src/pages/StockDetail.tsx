@@ -6,6 +6,7 @@ import { Card, CardHeader, Badge } from '../components/ui';
 import NarrativeTimeline from '../components/ui/NarrativeTimeline';
 import type { PageId } from '../types';
 import { useLoadingMessage } from '../hooks/useLoadingMessage';
+import { API_BASE_URL } from '../config';
 
 interface StockDetailProps {
   initialTicker?: string;
@@ -29,7 +30,7 @@ export default function StockDetail({ initialTicker = 'AAPL', onNavigate }: Stoc
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`http://localhost:3001/api/stock/${ticker}`);
+        const res = await fetch(`${API_BASE_URL}/api/stock/${ticker}`);
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.error || 'Failed to fetch data');

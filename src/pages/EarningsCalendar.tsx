@@ -20,6 +20,8 @@ const timeColors: Record<string, string> = {
   'During Market': 'text-green-700 bg-green-50 border-green-200',
 };
 
+import { API_BASE_URL } from '../config';
+
 export default function EarningsCalendar() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export default function EarningsCalendar() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/earnings-calendar');
+        const res = await fetch(`${API_BASE_URL}/api/earnings-calendar`);
         if (!res.ok) throw new Error('Failed to load earnings calendar');
         const raw = await res.json();
         

@@ -6,6 +6,8 @@ import { cn, getSentimentBadge } from '../lib/utils';
 
 type FilterType = 'All' | 'Positive' | 'Neutral' | 'Negative';
 
+import { API_BASE_URL } from '../config';
+
 export default function FinancialNews() {
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,7 +19,7 @@ export default function FinancialNews() {
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/financial-news');
+        const res = await fetch(`${API_BASE_URL}/api/financial-news`);
         if (!res.ok) throw new Error('Failed to fetch news');
         setNews(await res.json());
       } catch (err: any) {

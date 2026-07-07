@@ -17,6 +17,7 @@ const sentimentData = [
   { subject: 'Consumer', score: 67 },
   { subject: 'Industrial', score: 55 },
 ];
+import { API_BASE_URL } from '../config';
 
 export default function MarketOverview() {
   const [data, setData] = useState<any>(null);
@@ -26,7 +27,7 @@ export default function MarketOverview() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/market-overview');
+        const res = await fetch(`${API_BASE_URL}/api/market-overview`);
         if (!res.ok) throw new Error('Failed to load market overview');
         setData(await res.json());
       } catch (err: any) {

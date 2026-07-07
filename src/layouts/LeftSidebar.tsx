@@ -3,6 +3,7 @@ import { Home, List, Bell, Star, TrendingUp, TrendingDown, BookOpen, Calendar, N
 import type { PageId } from '../types';
 import { cn } from '../lib/utils';
 import { useLoadingMessage } from '../hooks/useLoadingMessage';
+import { API_BASE_URL } from '../config';
 
 interface LeftSidebarProps {
   activePage: PageId;
@@ -63,7 +64,7 @@ export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps
 
   useEffect(() => {
     setLoadingPortfolio(true);
-    fetch(`http://localhost:3001/api/portfolio?data=${encodeURIComponent(JSON.stringify(portfolioItems))}`)
+    fetch(`${API_BASE_URL}/api/portfolio?data=${encodeURIComponent(JSON.stringify(portfolioItems))}`)
       .then(r => r.ok ? r.json() : [])
       .then(setPortfolio)
       .catch(() => {})
@@ -75,8 +76,8 @@ export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps
     const buildAlerts = async () => {
       try {
         const [earningsRes, newsRes] = await Promise.all([
-          fetch('http://localhost:3001/api/earnings-calendar'),
-          fetch('http://localhost:3001/api/financial-news'),
+          fetch(`${API_BASE_URL}/api/earnings-calendar`),
+          fetch(`${API_BASE_URL}/api/financial-news`),
         ]);
         const earnings = earningsRes.ok ? await earningsRes.json() : [];
         const news = newsRes.ok ? await newsRes.json() : [];

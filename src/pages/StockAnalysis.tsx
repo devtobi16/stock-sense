@@ -16,6 +16,7 @@ import {
   getChangeColor, getRecommendationBadge, getSignalColor, getSentimentBadge
 } from '../lib/utils';
 import type { PageId } from '../types';
+import { API_BASE_URL } from '../config';
 
 const TIME_FILTERS = ['1D', '5D', '1M', '6M', 'YTD', '1Y', '5Y'];
 
@@ -54,7 +55,7 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
     setError(null);
     setTicker(t);
     try {
-      const res = await fetch(`http://localhost:3001/api/stock-analysis/${t}`);
+      const res = await fetch(`${API_BASE_URL}/api/stock-analysis/${t}`);
       if (!res.ok) {
         if (res.status === 503) {
           throw new Error('AI rate limit exceeded. Please wait a minute and try again.');

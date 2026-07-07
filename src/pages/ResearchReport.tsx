@@ -16,6 +16,8 @@ interface ResearchReportProps {
   onNavigate: (page: PageId, ticker?: string) => void;
 }
 
+import { API_BASE_URL } from '../config';
+
 export default function ResearchReport({ ticker = 'AAPL', onNavigate }: ResearchReportProps) {
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -27,7 +29,7 @@ export default function ResearchReport({ ticker = 'AAPL', onNavigate }: Research
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`http://localhost:3001/api/research-report/${ticker}`);
+        const res = await fetch(`${API_BASE_URL}/api/research-report/${ticker}`);
         if (!res.ok) throw new Error('Failed to fetch research report');
         setReport(await res.json());
       } catch (err: any) {

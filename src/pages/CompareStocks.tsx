@@ -9,6 +9,7 @@ import { Card, CardHeader } from '../components/ui';
 import { compareStocksData, revenueYears, generatePerfData } from '../data/mockData';
 import { cn, formatPrice, getRecommendationBadge, getSignalColor, getSentimentBadge } from '../lib/utils';
 import CircularProgress from '../components/charts/CircularProgress';
+import { API_BASE_URL } from '../config';
 
 const AVAILABLE = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'META', 'AMD'];
 const COLORS = ['#16a34a', '#2563eb', '#d97706', '#dc2626'];
@@ -38,7 +39,7 @@ export default function CompareStocks() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`http://localhost:3001/api/compare?tickers=${selected.join(',')}`);
+        const res = await fetch(`${API_BASE_URL}/api/compare?tickers=${selected.join(',')}`);
         if (!res.ok) throw new Error('Failed to fetch data');
         setData(await res.json());
       } catch (err) {

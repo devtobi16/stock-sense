@@ -12,6 +12,7 @@ const ADDABLE_STOCKS = ['TSLA', 'AMZN', 'META', 'GOOGL', 'NFLX', 'AMD', 'INTC', 
 interface WatchlistProps {
   onNavigate: (page: PageId, ticker?: string) => void;
 }
+import { API_BASE_URL } from '../config';
 
 export default function Watchlist({ onNavigate }: WatchlistProps) {
   const [tickers, setTickers] = useState<string[]>(() => {
@@ -38,7 +39,7 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`http://localhost:3001/api/watchlist?tickers=${tickers.join(',')}`);
+        const res = await fetch(`${API_BASE_URL}/api/watchlist?tickers=${tickers.join(',')}`);
         if (!res.ok) throw new Error('Failed to fetch data');
         setItems(await res.json());
       } catch (err) {

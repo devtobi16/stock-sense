@@ -9,6 +9,8 @@ interface ThesisFeedProps {
   onNavigate: (page: PageId, ticker?: string) => void;
 }
 
+import { API_BASE_URL } from '../config';
+
 export default function ThesisFeed({ onNavigate }: ThesisFeedProps) {
   const [cards, setCards] = useState<ThesisCardData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,7 +20,7 @@ export default function ThesisFeed({ onNavigate }: ThesisFeedProps) {
   useEffect(() => {
     const fetchCards = async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/thesis-feed');
+        const res = await fetch(`${API_BASE_URL}/api/thesis-feed`);
         if (!res.ok) throw new Error('Failed to fetch data');
         setCards(await res.json());
       } catch (err) {
