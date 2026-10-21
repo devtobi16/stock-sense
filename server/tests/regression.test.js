@@ -75,3 +75,45 @@ test('chat rejects empty messages and reports provider failures as HTTP errors',
   assert.equal((await invoke({ message: ' ' })).status, 400);
   assert.equal((await invoke({ message: 'Hi', context: null })).status, 503);
 });
+
+function analystWithProviders({ env = {}, gemini, groq }) {
+  const sandbox = {
+    module: { exports: {} }, process: { env }, console: { log() {} },
+    AbortController, setTimeout, clearTimeout, fetch: groq,
+    require(name) {
+      if (name === 'dotenv') return { config() {} };
+      if (name === '@google/genai') return { GoogleGenAI: class { constructor() { this.models = { generateContent: gemini }; } } };
+      throw Error(name);
+    },
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../services/aiSynthesizer.js'), 'utf8'), sandbox);
+  return sandbox.module.exports;
+}
+test('Gemini chat uses cancellation without an invalid short server deadline', async () => {
+  let request;
+  const analyst = analystWithProviders({ gemini: async value => { request = value; return { text: 'AAPL comparison' }; } });
+  assert.equal(await analyst.handleChat('Compare AAPL', {}), 'AAPL comparison');
+  assert.equal(request.model, 'gemini-2.5-flash');
+  assert.ok(request.config.abortSignal instanceof AbortSignal);
+  assert.equal(request.config.httpOptions, undefined);
+});
+test('unavailable Groq models are skipped on later requests and Gemini still responds', async () => {
+  let groqCalls = 0;
+  const analyst = analystWithProviders({
+    env: { GROQ_API_KEY: 'test', GROQ_MODELS: 'unavailable-model' },
+    groq: async () => { groqCalls++; return { ok: false, status: 404, text: async () => 'model_not_found' }; },
+    gemini: async () => ({ text: 'Live context answer' }),
+  });
+  assert.equal(await analyst.handleChat('AAPL', {}), 'Live context answer');
+  assert.equal(await analyst.handleChat('MSFT', {}), 'Live context answer');
+  assert.equal(groqCalls, 1);
+});
+test('Gemini busy response falls through to a configured backup', async () => {
+  const seen = [];
+  const analyst = analystWithProviders({
+    env: { GEMINI_MODELS: 'busy,backup' },
+    gemini: async ({ model }) => { seen.push(model); if (model === 'busy') throw Error('503 UNAVAILABLE'); return { text: 'Recovered' }; },
+  });
+  assert.equal(await analyst.handleChat('AAPL', {}), 'Recovered');
+  assert.deepEqual(seen, ['busy', 'backup']);
+});
