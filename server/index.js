@@ -12,6 +12,9 @@ const {
   generateMacroOutlook, generateFinancialNewsSummary, generateResearchReport
 } = require('./services/aiSynthesizer');
 
+const { chatTickers } = require('./services/chatContext');
+const { createCache } = require('./services/requestCache');
+const cachedBrain = createCache(1, 5 * 60 * 1000);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -42,16 +45,11 @@ const MOCK_PORTFOLIO = [
 
 app.get('/api/market-brain', async (req, res) => {
   try {
-    const now = Date.now();
-    if (caches.marketBrain.data && (now - caches.marketBrain.time < CACHE_TTL_MS)) {
-      return res.json(caches.marketBrain.data);
-    }
-
-    const trending = await fetchTrendingSymbols();
-    const rawMarketData = await fetchMarketData(trending);
-    const synthesizedInsights = await synthesizeMarketData(rawMarketData);
-
-    caches.marketBrain = { data: synthesizedInsights, time: now };
+    const synthesizedInsights = await cachedBrain('market-brain', async () => {
+      const trending = await fetchTrendingSymbols();
+      const rawMarketData = await fetchMarketData(trending);
+      return synthesizeMarketData(rawMarketData);
+    });
     res.json(synthesizedInsights);
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate market brain data' });
@@ -172,19 +170,27 @@ app.get('/api/stock/:ticker', async (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
+  const { message, context = {}, history = [] } = req.body || {};
+  if (typeof message !== 'string' || !message.trim() || message.length > 4000) {
+    return res.status(400).json({ error: 'Please send a message of 1–4000 characters.' });
+  }
+  const turns = (Array.isArray(history) ? history : []).slice(-10)
+    .filter(t => t && ['user', 'assistant'].includes(t.role) && typeof t.content === 'string')
+    .map(t => ({ role: t.role, content: t.content.slice(0, 4000) }));
   try {
-    const { message, context } = req.body;
-    // Get live data for context if a ticker is mentioned
-    let liveContext = { userContext: context };
-    if (context.ticker) {
-      liveContext.marketData = await fetchTickerData(context.ticker);
-    }
-    
-    const reply = await handleChat(message, liveContext);
+    const tickers = chatTickers(message, context || {}, turns);
+    const marketData = await fetchMarketData(tickers);
+    const liveContext = { marketData, requestedTickers: tickers, retrievedAt: new Date().toISOString() };
+    const reply = await handleChat(message, liveContext, turns);
     res.json({ reply });
   } catch (error) {
-    res.status(500).json({ error: 'Chat failed' });
+    res.status(503).json({ error: 'The analyst is temporarily unavailable. Please try again.' });
   }
+});
+
+// Sidebar headlines do not need an AI summary before they can be displayed.
+app.get('/api/news-headlines', async (req, res) => {
+  res.json(await fetchGlobalNews());
 });
 
 app.get('/api/watchlist', async (req, res) => {

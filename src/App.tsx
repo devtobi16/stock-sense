@@ -1,16 +1,16 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import AppShell from './layouts/AppShell';
-import Dashboard from './pages/Dashboard';
-import ThesisFeed from './pages/ThesisFeed';
-import StockDetail from './pages/StockDetail';
-import StockAnalysis from './pages/StockAnalysis';
-import CompareStocks from './pages/CompareStocks';
-import Watchlist from './pages/Watchlist';
-import MarketOverview from './pages/MarketOverview';
-import FinancialNews from './pages/FinancialNews';
-import EarningsCalendar from './pages/EarningsCalendar';
-import About from './pages/About';
-import ResearchReport from './pages/ResearchReport';
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const ThesisFeed = lazy(() => import('./pages/ThesisFeed'));
+const StockDetail = lazy(() => import('./pages/StockDetail'));
+const StockAnalysis = lazy(() => import('./pages/StockAnalysis'));
+const CompareStocks = lazy(() => import('./pages/CompareStocks'));
+const Watchlist = lazy(() => import('./pages/Watchlist'));
+const MarketOverview = lazy(() => import('./pages/MarketOverview'));
+const FinancialNews = lazy(() => import('./pages/FinancialNews'));
+const EarningsCalendar = lazy(() => import('./pages/EarningsCalendar'));
+const About = lazy(() => import('./pages/About'));
+const ResearchReport = lazy(() => import('./pages/ResearchReport'));
 import type { PageId } from './types';
 
 function App() {
@@ -52,8 +52,8 @@ function App() {
   };
 
   return (
-    <AppShell activePage={activePage} onNavigate={handleNavigate}>
-      {renderPage()}
+    <AppShell activePage={activePage} selectedTicker={selectedTicker} onNavigate={handleNavigate}>
+      <Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading workspace…</div>}>{renderPage()}</Suspense>
     </AppShell>
   );
 }

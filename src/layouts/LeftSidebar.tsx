@@ -77,7 +77,7 @@ export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps
       try {
         const [earningsRes, newsRes] = await Promise.all([
           fetch(`${API_BASE_URL}/api/earnings-calendar`),
-          fetch(`${API_BASE_URL}/api/financial-news`),
+          fetch(`${API_BASE_URL}/api/news-headlines`),
         ]);
         const earnings = earningsRes.ok ? await earningsRes.json() : [];
         const news = newsRes.ok ? await newsRes.json() : [];

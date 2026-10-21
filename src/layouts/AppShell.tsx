@@ -5,6 +5,7 @@ import RightPanel from './RightPanel';
 
 interface AppShellProps {
   activePage: PageId;
+  selectedTicker?: string;
   onNavigate: (page: PageId, ticker?: string) => void;
   children: React.ReactNode;
 }
@@ -16,7 +17,7 @@ const pageTransition = {
   transition: { duration: 0.22, ease: "easeOut" } as any,
 };
 
-export default function AppShell({ activePage, onNavigate, children }: AppShellProps) {
+export default function AppShell({ activePage, selectedTicker, onNavigate, children }: AppShellProps) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f9fafb]">
       {/* Left Sidebar (Fixed) */}
@@ -37,7 +38,7 @@ export default function AppShell({ activePage, onNavigate, children }: AppShellP
       </main>
 
       {/* Right Panel (Fixed Analyst Chat) */}
-      <RightPanel />
+      <RightPanel ticker={['stock-detail', 'stock-analysis', 'research-report'].includes(activePage) ? selectedTicker : undefined} />
     </div>
   );
 }

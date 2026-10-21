@@ -1,10 +1,15 @@
 const FINNHUB_KEY = process.env.FINNHUB_API_KEY || 'd969j21r01qsd323k0q0d969j21r01qsd323k0qg';
 
+const { createCache } = require('./requestCache');
+const cachedRequest = createCache(300, 60 * 1000);
+
 async function fetchFinnhub(endpoint) {
-  const url = `https://finnhub.io/api/v1${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${FINNHUB_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Finnhub error: ${res.status}`);
-  return await res.json();
+  return cachedRequest(endpoint, async () => {
+    const url = `https://finnhub.io/api/v1${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${FINNHUB_KEY}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`Finnhub error: ${res.status}`);
+    return await res.json();
+  });
 }
 
 function getPastDate(days) {
