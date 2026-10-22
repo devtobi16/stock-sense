@@ -1,4 +1,5 @@
-import { useState, lazy, Suspense } from 'react';
+import { Component, useState, lazy, Suspense } from 'react';
+import type { ReactNode } from 'react';
 import AppShell from './layouts/AppShell';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ThesisFeed = lazy(() => import('./pages/ThesisFeed'));
@@ -12,6 +13,17 @@ const EarningsCalendar = lazy(() => import('./pages/EarningsCalendar'));
 const About = lazy(() => import('./pages/About'));
 const ResearchReport = lazy(() => import('./pages/ResearchReport'));
 import type { PageId } from './types';
+
+class PageBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed ? <div role="alert" className="p-8 text-slate-700">
+      <p>This page could not load. A new deployment or a connection interruption may have changed its files.</p>
+      <button className="mt-4 underline" onClick={() => window.location.reload()}>Reload workspace</button>
+    </div> : this.props.children;
+  }
+}
 
 function App() {
   const [activePage, setActivePage] = useState<PageId>('dashboard');
@@ -53,7 +65,7 @@ function App() {
 
   return (
     <AppShell activePage={activePage} selectedTicker={selectedTicker} onNavigate={handleNavigate}>
-      <Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading workspace…</div>}>{renderPage()}</Suspense>
+      <PageBoundary key={activePage}><Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading workspace…</div>}>{renderPage()}</Suspense></PageBoundary>
     </AppShell>
   );
 }
