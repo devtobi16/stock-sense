@@ -4,13 +4,13 @@ import { Card } from '../components/ui';
 import { cn } from '../lib/utils';
 import { useLoadingMessage } from '../hooks/useLoadingMessage';
 
-type DateGroup = 'Today' | 'Tomorrow' | 'This Week';
-const groups: DateGroup[] = ['Today', 'Tomorrow', 'This Week'];
+type DateGroup = 'Today' | 'Tomorrow' | 'Later';
+const groups: DateGroup[] = ['Today', 'Tomorrow', 'Later'];
 
 const groupBadge: Record<DateGroup, string> = {
   'Today': 'text-green-700 bg-green-100 border-green-200',
   'Tomorrow': 'text-blue-700 bg-blue-100 border-blue-200',
-  'This Week': 'text-slate-600 bg-slate-100 border-slate-200',
+  'Later': 'text-slate-600 bg-slate-100 border-slate-200',
 };
 
 const timeColors: Record<string, string> = {
@@ -30,7 +30,7 @@ export default function EarningsCalendar() {
     const date = new Date(item.timestamp * 1000);
     const today = new Date(); today.setHours(0,0,0,0); date.setHours(0,0,0,0);
     const days = Math.round((date.getTime() - today.getTime()) / 86400000);
-    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'This Week', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: item.sector || 'Not reported', expectedRevenue: item.expectedRevenue || 'Not reported' };
+    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'Later', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: typeof item.sector === 'string' ? item.sector : 'Not reported', expectedRevenue: item.expectedRevenue || 'Not reported' };
   });
 
   const grouped = groups.reduce((acc, g) => {
@@ -68,7 +68,7 @@ export default function EarningsCalendar() {
         {[
           { label: 'Today', count: grouped['Today'].length, color: 'text-green-700', bg: 'bg-green-50 border-green-200' },
           { label: 'Tomorrow', count: grouped['Tomorrow'].length, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-          { label: 'This Week', count: grouped['This Week'].length, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
+          { label: 'Later', count: grouped['Later'].length, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
         ].map(({ label, count, color, bg }) => (
           <div key={label} className={cn('rounded-2xl border p-3 text-center', bg)}>
             <div className={cn('text-3xl font-bold', color)}>{count}</div>
@@ -94,14 +94,14 @@ export default function EarningsCalendar() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    {['Company', 'Sector', 'Time', 'Est. EPS', 'Last EPS', 'EPS Surprise', 'Est. Revenue'].map((h) => (
+                    {['Company', 'Sector', 'Time', 'Est. EPS', 'Reported EPS', 'EPS Surprise', 'Est. Revenue'].map((h) => (
                       <th key={h} className="text-[10px] text-slate-400 uppercase tracking-wider text-left pb-3 pr-4 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {entries.map((entry, i) => {
-                    const epsChange = ((entry.estimatedEPS - entry.lastEPS) / Math.abs(entry.lastEPS)) * 100;
+                    const epsChange = typeof entry.estimatedEPS === 'number' && typeof entry.actualEPS === 'number' && entry.estimatedEPS !== 0 ? ((entry.actualEPS - entry.estimatedEPS) / Math.abs(entry.estimatedEPS)) * 100 : NaN;
                     return (
                       <motion.tr
                         key={entry.ticker}
@@ -112,7 +112,7 @@ export default function EarningsCalendar() {
                       >
                         <td className="py-3 pr-4">
                           <div className="font-bold text-sm text-slate-800">{entry.ticker}</div>
-                          <div className="text-xs text-slate-400 max-w-[140px] truncate">{entry.company}</div>
+                          <div className="text-xs text-slate-400 max-w-[140px] truncate">{entry.date}</div>
                         </td>
                         <td className="py-3 pr-4">
                           <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full border border-green-200">
@@ -131,7 +131,7 @@ export default function EarningsCalendar() {
                           <span className="text-sm font-semibold text-slate-800 mono">${(typeof entry.estimatedEPS === 'number' ? entry.estimatedEPS.toFixed(2) : '—')}</span>
                         </td>
                         <td className="py-3 pr-4">
-                          <span className="text-sm text-slate-400 mono">${(typeof entry.lastEPS === 'number' ? entry.lastEPS.toFixed(2) : '—')}</span>
+                          <span className="text-sm text-slate-400 mono">${(typeof entry.actualEPS === 'number' ? entry.actualEPS.toFixed(2) : '—')}</span>
                         </td>
                         <td className="py-3 pr-4">
                           <div className={cn('flex items-center gap-1 text-xs font-semibold', epsChange >= 0 ? 'text-green-600' : 'text-red-600')}>

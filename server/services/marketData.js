@@ -185,8 +185,11 @@ async function fetchEarningsCalendar(tickers) {
         company: q.symbol,
         date: earnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         timestamp: Math.floor(earnDate.getTime() / 1000),
-        lastEPS: q.epsActual || 0,
-        sector: q.epsEstimate || 0
+        actualEPS: Number.isFinite(q.epsActual) ? q.epsActual : null,
+        estimatedEPS: Number.isFinite(q.epsEstimate) ? q.epsEstimate : null,
+        expectedRevenue: Number.isFinite(q.revenueEstimate) ? q.revenueEstimate : null,
+        time: ({ bmo: 'Before Open', amc: 'After Close', dmh: 'During Market' })[q.hour] || 'Not reported',
+        sector: 'Not reported'
       };
     }).sort((a, b) => a.timestamp - b.timestamp);
   } catch (e) {

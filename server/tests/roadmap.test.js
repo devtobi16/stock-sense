@@ -73,3 +73,9 @@ test('history retains recent context but bounds message count and character budg
  const turns=Array.from({length:50},(_,i)=>({role:'user',content:`${i}:`+'x'.repeat(4000)}));
  const result=sanitizeHistory(turns);assert.ok(result.length<=40);assert.ok(result.reduce((n,t)=>n+t.content.length,0)<=24000);assert.ok(result.at(-1).content.startsWith('49:'));
 });
+
+test('earnings provider fields retain nulls and map estimates to financial columns', async () => {
+ const market=marketModule(async()=>({ok:true,json:async()=>({earningsCalendar:[{symbol:'NVDA',date:'2026-11-17',epsActual:null,epsEstimate:2.5259,revenueEstimate:123000,hour:'amc'}]})}));
+ const [entry]=await market.fetchEarningsCalendar(['NVDA']);
+ assert.equal(entry.estimatedEPS,2.5259);assert.equal(entry.actualEPS,null);assert.equal(entry.sector,'Not reported');assert.equal(entry.time,'After Close');
+});
