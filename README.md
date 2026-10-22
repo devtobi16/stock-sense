@@ -50,3 +50,16 @@ npm run lint
 Tests cover cache expiry/coalescing, polling visibility, stale data, ticker races, conversation context, empty watchlists, input validation, CDN/private cache boundaries, provider failures, and request budgets. Provider calls are mocked in automated tests. Browser and real-provider acceptance must be measured separately; test duration is not page-load latency.
 
 This is an educational portfolio project. Provider data can be delayed or unavailable, and generated answers can be incorrect. It does not execute trades or provide personalized investment advice.
+
+
+## Company research desk
+
+The home page connects quotes, SEC filings, and explained news-impact labels for a selected company. SEC coverage starts with 14 US issuers: AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, NFLX, AMD, INTC, JPM, V, WMT, and JNJ. Other symbols can have quote/news coverage without filing support.
+
+- SEC submissions identify the original 10-K, 10-Q and 8-K documents. The server verifies CIK and ticker identity and derives document URLs from SEC-provided accession metadata.
+- Read excerpts and summarize filing are explicit requests. The reader strips document markup and retrieves at most four passages by lexical relevance; it is not a complete filing review or a financial-table parser. Summary and chat display those passages and the original document link.
+- Every displayed company-news item has a Positive, Negative or Neutral potential-impact tag and reason. Initial tags use conservative headline rules; optional AI reviews the first three directly matching headlines. Neutral includes ambiguous/mixed evidence. Headlines without a company mention are separated as relevance unconfirmed. Tags do not establish price causality, and publication time must be compared with quote time. Full news articles are not retrieved.
+- Quotes, filings and news load independently. No AI call happens merely from opening a page. Public successful research responses use CDN caching; bounded per-instance caches coalesce SEC and AI requests. Chat history stays tab-local and chat responses are never publicly cached. Cache persistence across all function restarts is not guaranteed.
+- SEC requests use a declared StockSense User-Agent (override with SEC_USER_AGENT), timeouts, a 6 MB document limit and per-instance pacing. Account-wide enforcement remains with the providers; the app is intended for a modest portfolio audience, not unrestricted production traffic.
+
+Tests cover issuer/path validation, evidence extraction, relevance and mixed sentiment, malformed model output, cache coalescing, provider failures and chat filing context. Provider integration still requires live preview checks.

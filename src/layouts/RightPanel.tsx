@@ -5,8 +5,8 @@ import { API_BASE_URL } from '../config';
 
 const SUGGESTED_PROMPTS = [
   'What should a beginner know about investing?',
-  'Explain AAPL’s daily price change',
-  'What is an earnings surprise?',
+  'What risks does this SEC filing disclose?',
+  'Does the news explain the price move?',
   'Compare AAPL and MSFT',
 ];
 
@@ -15,6 +15,8 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   failed?: boolean;
+  sources?: {title:string;url:string}[];
+  evidence?: {excerpts?:{id:string;text:string}[];scope?:string};
   structured?: {
     summary?: string;
     reasoning?: string[];
@@ -27,11 +29,11 @@ const initialMessages: ChatMessage[] = [
   {
     id: '1',
     role: 'assistant',
-    content: "Hi, I'm MarketMind Analyst. Ask about investing basics, compare stocks, or explore the supplied market quotes and headlines. I remember recent messages in this tab.",
+    content: "Hi, I'm MarketMind Analyst. Ask about investing basics, compare stocks, or explore company news and SEC filing excerpts with sources. I remember recent messages in this tab.",
   }
 ];
 
-export default function RightPanel({ ticker }: { ticker?: string }) {
+export default function RightPanel({ ticker, filing }: { ticker?: string; filing?: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(() => { try { const saved = JSON.parse(sessionStorage.getItem('stocksense_chat') || 'null'); return Array.isArray(saved) ? [initialMessages[0], ...saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-40)] : initialMessages; } catch { return initialMessages; } });
   useEffect(() => { try { sessionStorage.setItem('stocksense_chat', JSON.stringify(messages.filter(m => m.id !== '1').slice(-40))); } catch { /* Storage can be disabled. */ } }, [messages]);
@@ -57,7 +59,7 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: text,
-          context: { ticker },
+          context: { ticker, filing },
           history: messages.filter(m => m.id !== '1' && !m.failed).slice(-40).map(({ role, content }) => ({ role, content }))
         })
       });
@@ -70,7 +72,9 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.reply
+        content: data.reply,
+        sources: Array.isArray(data.sources)?data.sources.filter((s:{url:string})=>{try{return ['https:','http:'].includes(new URL(s.url).protocol);}catch{return false;}}).slice(0,6):[],
+        evidence: data.evidence
       };
       if (data.context?.omittedTickers?.length) aiMsg.content += `\n\nLive data was limited to four symbols. Not fetched: ${data.context.omittedTickers.join(', ')}.`;
       setMessages(prev => [...prev, aiMsg]);
@@ -116,6 +120,7 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
         </button>
       </div>
 
+      {ticker&&<div className="px-4 py-2 text-[11px] text-green-800 bg-green-50 border-b">Research context: <strong>{ticker}</strong>{filing?' · selected SEC filing':''}</div>}
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         <>
@@ -133,6 +138,8 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
                   {msg.content && (
                     <div className="text-sm text-slate-700 mb-3 whitespace-pre-wrap break-words">{msg.content}</div>
                   )}
+                  {!!msg.sources?.length && <details className="mb-3 text-xs text-slate-500"><summary className="cursor-pointer font-semibold text-green-800">Available sources ({msg.sources.length})</summary><ul className="mt-2 space-y-2">{msg.sources.map((s,i)=><li key={s.url+i}><a href={s.url} target="_blank" rel="noopener noreferrer" className="underline break-words">{s.title} ↗</a></li>)}</ul><p className="mt-2">Sources supplied to the analyst; not every source necessarily supports every claim.</p></details>}
+                  {!!msg.evidence?.excerpts?.length && <details className="mb-3 text-xs text-slate-500"><summary className="cursor-pointer font-semibold text-green-800">Filing evidence passages</summary><p className="my-2">{msg.evidence.scope}</p>{msg.evidence.excerpts.map(e=><blockquote key={e.id} className="border-l pl-2 my-2">[{e.id}] {e.text}</blockquote>)}</details>}
                   {msg.structured && (
                     <div className="space-y-3 bg-[#f8fafb] border border-slate-100 rounded-xl p-3.5">
                       {msg.structured.summary && (

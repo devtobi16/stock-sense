@@ -1,9 +1,10 @@
 const SYMBOL = /^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$/;
-const STOP_WORDS = new Set('I A AI API CEO CFO EPS PE ETF ETFS USD THE AND IRA ROI USA US UK EU GDP APR APY CD CDS MMF NAV UTC WHAT HOW WHY WHEN WHERE WHICH CAN DO IS ARE FOR NEW TOPIC'.split(' '));
+const STOP_WORDS = new Set('I A AI API SEC CEO CFO EPS PE ETF ETFS USD THE AND IRA ROI USA US UK EU GDP APR APY CD CDS MMF NAV UTC WHAT HOW WHY WHEN WHERE WHICH CAN DO IS ARE FOR NEW TOPIC'.split(' '));
 const ALIASES = { apple: 'AAPL', microsoft: 'MSFT', nvidia: 'NVDA', tesla: 'TSLA', amazon: 'AMZN', alphabet: 'GOOGL', google: 'GOOGL', meta: 'META', netflix: 'NFLX', 'advanced micro devices': 'AMD', intel: 'INTC', 'berkshire hathaway': 'BRK.B' };
 const KNOWN = new Set([...Object.values(ALIASES), 'VTI', 'VOO', 'SPY', 'QQQ', 'DIA', 'JPM', 'V', 'WMT']);
 const MAX_TICKERS = 4;
 function extract(text = '') {
+  text = text.replace(/\b(?:10-[KQ]|8-K)(?:\/A)?\b/gi, ' ');
   const found = [];
   for (const match of text.matchAll(/\$[a-z]{1,5}(?:[.-][a-z]{1,2})?\b|\b[a-z]{1,5}(?:[.-][a-z]{1,2})?\b/gi)) {
     const raw = match[0], symbol = raw.replace(/^\$/, '').toUpperCase();
@@ -18,8 +19,9 @@ function extract(text = '') {
 function resolveChatContext(message, context = {}, history = []) {
   let symbols = extract(message);
   let source = 'message';
+  if (!symbols.length && context.filing && typeof context.ticker === 'string' && SYMBOL.test(context.ticker) && /\b(filing|10-k|10-q|8-k|annual report|quarterly report|sec)\b/i.test(message)) { symbols=[context.ticker];source='selected-filing'; }
   const followup = /\b(those|them|that one|these|which of|what about)\b/i.test(message);
-  const educational = !followup && /\b(beginner|diversification|diversified|investing basics|what is|what are|how do|how does|risk tolerance|six months|\d+ months)\b/i.test(message);
+  const educational = !followup && !/\b(filing|10-k|10-q|8-k|annual report|quarterly report|sec)\b/i.test(message) && /\b(beginner|diversification|diversified|investing basics|what is|what are|how do|how does|risk tolerance|six months|\d+ months)\b/i.test(message);
   const reset = /\b(new topic|change (?:the )?topic|forget (?:that|those)|start over)\b/i.test(message);
   if (!symbols.length && !reset && !educational) {
     for (const turn of [...history].reverse()) {

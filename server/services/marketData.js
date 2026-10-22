@@ -226,3 +226,12 @@ module.exports = {
   fetchDetailedQuote, fetchGlobalIndices, fetchGlobalNews, fetchEarningsCalendar,
   fetchResearchData, fetchQuote, fetchQuotes
 };
+
+// Company research fetches a broader feed before applying ticker relevance checks.
+async function fetchCompanyNews(ticker) {
+  const today=new Date().toISOString().slice(0,10);
+  const data=await fetchFinnhub(`/company-news?symbol=${encodeURIComponent(ticker)}&from=${getPastDate(7)}&to=${today}`);
+  if(!Array.isArray(data)) throw Error('Company news unavailable');
+  return data.slice(0,60).filter(n=>typeof n.headline==='string' && typeof n.url==='string').map(n=>({title:n.headline,link:n.url,publisher:n.source||'Finnhub',time:n.datetime*1000}));
+}
+module.exports.fetchCompanyNews=fetchCompanyNews;
