@@ -15,6 +15,8 @@ const cases = [
  ['financial acronyms', ['How do IRA and ROI work?'], []],
  ['conversation over page selection', ['Which moved more?', {ticker:'NVDA'}, [{role:'user',content:'Compare AAPL and MSFT'}]], ['AAPL','MSFT']],
  ['new topic clears context', ['New topic: explain diversification', {}, [{role:'user',content:'Compare AAPL and MSFT'}]], []],
+ ['assistant acronyms are not stocks', ['Which options fit?', {}, [{role:'user',content:'I need money in six months'}, {role:'assistant',content:'A CD or T-bill may be discussed. Check NAV in UTC.'}]], []],
+ ['user comparison survives incidental headlines', ['Which sources?', {}, [{role:'user',content:'Compare AAPL and MSFT'}, {role:'assistant',content:'AAPL and MSFT at UTC. META and XRP also appeared in headlines.'}]], ['AAPL','MSFT']],
  ['assistant suggestions', ['Which of those is more diversified?', {}, [{role:'user',content:'Suggest some broad funds'}, {role:'assistant',content:'Consider comparing VTI and VOO.'}]], ['VTI','VOO']],
 ];
 for (const [name,args,want] of cases) test(`context: ${name}`, () => assert.deepEqual(chatTickers(...args), want));

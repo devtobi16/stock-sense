@@ -105,6 +105,16 @@ export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps
           >
             <List size={16} /> Thesis Feed
           </button>
+          <details className="text-sm text-slate-600">
+            <summary className="cursor-pointer px-3 py-2">Research tools</summary>
+            {([
+              ['watchlist', 'Watchlist'], ['compare-stocks', 'Compare stocks'],
+              ['stock-analysis', 'Stock analysis'], ['market-overview', 'Market overview'],
+              ['financial-news', 'Financial news'], ['earnings-calendar', 'Earnings calendar'],
+            ] as [PageId, string][]).map(([page, label]) => (
+              <button key={page} onClick={() => onNavigate(page)} className={cn('block w-full text-left px-3 py-2 rounded-lg', activePage === page ? 'bg-green-50 text-green-700' : 'hover:bg-slate-50')}>{label}</button>
+            ))}
+          </details>
         </div>
 
         {/* Portfolio */}

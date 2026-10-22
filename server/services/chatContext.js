@@ -1,5 +1,5 @@
 const SYMBOL = /^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$/;
-const STOP_WORDS = new Set('I AI API CEO CFO EPS PE ETF ETFs USD THE AND IRA ROI USA UK EU GDP APR APY WHAT HOW WHY WHEN WHERE WHICH CAN DO IS ARE FOR NEW TOPIC'.split(' '));
+const STOP_WORDS = new Set('I A AI API CEO CFO EPS PE ETF ETFS USD THE AND IRA ROI USA US UK EU GDP APR APY CD CDS MMF NAV UTC WHAT HOW WHY WHEN WHERE WHICH CAN DO IS ARE FOR NEW TOPIC'.split(' '));
 const ALIASES = { apple: 'AAPL', microsoft: 'MSFT', nvidia: 'NVDA', tesla: 'TSLA', amazon: 'AMZN', alphabet: 'GOOGL', google: 'GOOGL', meta: 'META', netflix: 'NFLX', 'advanced micro devices': 'AMD', intel: 'INTC', 'berkshire hathaway': 'BRK.B' };
 const KNOWN = new Set([...Object.values(ALIASES), 'VTI', 'VOO', 'SPY', 'QQQ', 'DIA', 'JPM', 'V', 'WMT']);
 const MAX_TICKERS = 4;
@@ -27,6 +27,12 @@ function resolveChatContext(message, context = {}, history = []) {
       if (!['user','assistant'].includes(turn.role) || typeof turn.content !== 'string') continue;
       if (/\b(new topic|start over)\b/i.test(turn.content)) break;
       symbols = extract(turn.content);
+      // Assistant prose contains many uppercase acronyms and incidental company
+      // names. Prefer the user's actual stock focus over those incidental mentions.
+      if (turn.role === 'assistant') {
+        const userFocus = [...history].reverse().find(t => t.role === 'user' && extract(t.content).length);
+        symbols = userFocus ? extract(userFocus.content) : symbols.filter(s => KNOWN.has(s));
+      }
       if (symbols.length) { source = 'conversation'; break; }
     }
     if (!symbols.length && typeof context.ticker === 'string' && SYMBOL.test(context.ticker.toUpperCase())) {
