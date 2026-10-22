@@ -96,7 +96,12 @@ function createApp({ market = require('./services/marketData'), handleChat = req
           return chosen?await research.document(focus,chosen.accession,message):{unavailable:'No SEC filing returned.'};
         } catch {return {unavailable:'SEC document excerpts are currently unavailable. Do not infer filing contents.'};}
       })():Promise.resolve(null);
-      const [marketData,filingEvidence]=await Promise.all([market.fetchMarketData(resolved.tickers),evidenceTask]);
+      const newsTask=typeof research.news==='function'?Promise.all(resolved.tickers.map(t=>research.news(t).catch(()=>null))):Promise.resolve([]);
+      const [rawMarketData,filingEvidence,companyNews]=await Promise.all([market.fetchMarketData(resolved.tickers),evidenceTask,newsTask]);
+      const marketData=rawMarketData.map(q=>{
+        const news=companyNews.find(n=>n?.ticker===q.ticker);
+        return news?{...q,news:news.articles.slice(0,3).map(n=>({title:n.title,link:n.link,time:n.time,potentialImpact:n.label,impactReason:n.reason,method:n.method}))}:q;
+      });
       const reply = await handleChat(message, {marketData, filingEvidence, requestedTickers:resolved.tickers, omittedTickers:resolved.omittedTickers, contextSource:resolved.source, retrievedAt:new Date().toISOString()}, turns);
       if (typeof reply !== 'string' || !reply.trim()) throw Error('Empty reply');
       res.json({reply,context:{tickers:resolved.tickers,omittedTickers:resolved.omittedTickers}, sources:[...(filingEvidence?.filing?[{title:`${focus} ${filingEvidence.filing.form} · ${filingEvidence.filing.filed}`,url:filingEvidence.filing.url}]:[]),...marketData.flatMap(q => (q.news || []).slice(0,2).map(n=>({title:n.title,url:n.link})))], evidence:filingEvidence});
