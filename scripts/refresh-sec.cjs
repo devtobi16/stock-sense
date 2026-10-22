@@ -7,12 +7,12 @@ const destination=path.join(__dirname,'../server/data/secSnapshots.json');
 const snapshots=JSON.parse(fs.readFileSync(destination,'utf8'));
 const research=createResearch({market:{},generate:async()=>'',snapshots:{},maxDocumentBytes:50000000,secTimeoutMs:20000});
 (async()=>{
- for(const ticker of (process.argv.length>2?process.argv.slice(2).filter(t=>COMPANIES[t]):Object.keys(COMPANIES))) {
+ for(const ticker of (process.argv.length>2?process.argv.slice(2).map(t=>t.toUpperCase()).filter(t=>COMPANIES[t]):Object.keys(snapshots))) {
   try {
    const metadata=await research.filings(ticker);
-   if(metadata.cachedSnapshot) throw Error('Live retrieval required');
+   if(metadata.cachedSnapshot||metadata.unavailable||metadata.unsupported) throw Error('Live retrieval required');
    const documents={};
-   for(const form of ['10-K','10-Q','8-K']) {
+   for(const form of ['10-K','10-Q','8-K','20-F','40-F','6-K']) {
     const f=metadata.filings.find(v=>v.form===form);if(!f)continue;
     try {
      const paragraphs=new Set();

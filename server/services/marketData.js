@@ -2,6 +2,7 @@ const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
 const { createCache } = require('./requestCache');
 const cachedRequest = createCache(300, 60 * 1000);
+const calendarCache = createCache(40, 15 * 60 * 1000);
 
 async function fetchFinnhub(endpoint) {
   return cachedRequest(endpoint, async () => {
@@ -173,17 +174,34 @@ async function fetchEarningsCalendar(tickers, { strict = false } = {}) {
   try {
     const today = new Date().toISOString().split('T')[0];
     const nextMonth = getPastDate(-30);
-    const calendar = await fetchFinnhub(`/calendar/earnings?from=${today}&to=${nextMonth}`);
-    
-    const earnings = calendar.earningsCalendar || [];
-    const relevant = earnings.filter(e => tickers.includes(e.symbol));
+    // The live provider caps large responses. Split the month into weeks;
+    // capped windows are subdivided, never silently accepted as complete.
+    const addDays=(date,days)=>new Date(Date.parse(date+'T00:00:00Z')+days*86400000).toISOString().slice(0,10);
+    async function window(from,to) {
+      return calendarCache(`${from}:${to}`,async()=>{
+        const calendar=await fetchFinnhub(`/calendar/earnings?from=${from}&to=${to}`);
+        if(!Array.isArray(calendar.earningsCalendar))throw Error('Invalid earnings response');
+        const rows=calendar.earningsCalendar;
+        if(rows.length<1500)return rows;
+        if(from===to)throw Error('The earnings provider truncated a single-day response.');
+        const days=Math.round((Date.parse(to)-Date.parse(from))/86400000);
+        const middle=addDays(from,Math.floor(days/2));
+        return [...await window(from,middle),...await window(addDays(middle,1),to)];
+      });
+    }
+    const windows=[];
+    for(let from=today;from<=nextMonth;from=addDays(from,7))windows.push([from,addDays(from,6)<nextMonth?addDays(from,6):nextMonth]);
+    const results=[];let cursor=0;
+    await Promise.all([0,1].map(async()=>{while(cursor<windows.length){const [from,to]=windows[cursor++];results.push(...await window(from,to));}}));
+    const earnings=[...new Map(results.map(e=>[`${e.symbol}|${e.date}|${e.quarter}|${e.year}`,e])).values()];
+    const relevant = earnings.filter(e => typeof e.symbol==='string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date||'') && e.date>=today && e.date<=nextMonth && (!tickers || tickers.includes(e.symbol)));
     
     return relevant.map(q => {
       const earnDate = new Date(q.date);
       return {
         ticker: q.symbol,
         company: q.symbol,
-        date: earnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        date: earnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone:'UTC' }),
         timestamp: Math.floor(earnDate.getTime() / 1000),
         actualEPS: Number.isFinite(q.epsActual) ? q.epsActual : null,
         estimatedEPS: Number.isFinite(q.epsEstimate) ? q.epsEstimate : null,
@@ -235,3 +253,11 @@ async function fetchCompanyNews(ticker) {
   return data.slice(0,60).filter(n=>typeof n.headline==='string' && typeof n.url==='string').map(n=>({title:n.headline,link:n.url,publisher:n.source||'Finnhub',time:n.datetime*1000}));
 }
 module.exports.fetchCompanyNews=fetchCompanyNews;
+
+// One bounded request per issuer, shared by the provider cache.
+async function fetchCompanyFilings(ticker) {
+  const rows=await fetchFinnhub(`/stock/filings?symbol=${encodeURIComponent(ticker)}&from=${getPastDate(550)}&to=${getPastDate(0)}`);
+  if(!Array.isArray(rows))throw Error('Filing index unavailable');
+  return rows;
+}
+module.exports.fetchCompanyFilings=fetchCompanyFilings;

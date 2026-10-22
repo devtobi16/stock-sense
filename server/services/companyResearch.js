@@ -17,7 +17,26 @@ const COMPANIES = {
   WMT:{name:'Walmart',cik:'104169',aliases:['Walmart','WMT']},
   JNJ:{name:'Johnson & Johnson',cik:'200406',aliases:['Johnson & Johnson','JNJ']},
 };
-const FORM_NAMES = {'10-K':'Annual report','10-Q':'Quarterly report','8-K':'Current report'};
+const directory = require('../data/secDirectory.json');
+const brands=new Map();
+for(const c of directory.companies){const first=c.name.split(/[ \t]/)[0].toLowerCase();if(!brands.has(first))brands.set(first,new Set());brands.get(first).add(c.cik);}
+for (const company of directory.companies) {
+  if (!COMPANIES[company.ticker]) {
+    const shortName=company.name.replace(/\s+(?:incorporated|inc\.?|corporation|corp\.?|limited|ltd\.?|plc|co\.?)(?:\s*[/,].*)?$/i,'').trim();
+    COMPANIES[company.ticker]={...company,aliases:[company.name,...(shortName.split(' ')[0].length>=4&&brands.get(company.name.split(' ')[0].toLowerCase())?.size===1?[shortName.split(' ')[0]]:[]),...(shortName.length>=4?[shortName]:[]),...(company.ticker.length>=3?[company.ticker]:[])]};
+  }
+}
+function normalizeTicker(ticker) {
+  const value=String(ticker||'').trim().toUpperCase();
+  return COMPANIES[value]?value:COMPANIES[value.replace('.', '-') ]?value.replace('.', '-'):value;
+}
+function searchCompanies(query='') {
+  const q=String(query).trim().toUpperCase().slice(0,80);
+  return Object.entries(COMPANIES).filter(([ticker,c])=>!q||ticker.includes(q)||c.name.toUpperCase().includes(q))
+    .sort(([a],[b])=>Number(b===q)-Number(a===q)||Number(b.startsWith(q))-Number(a.startsWith(q)))
+    .slice(0,20).map(([ticker,c])=>({ticker,name:c.name}));
+}
+const FORM_NAMES = {'10-K':'Annual report','10-Q':'Quarterly report','8-K':'Current report','20-F':'Foreign issuer annual report','40-F':'Canadian issuer annual report','6-K':'Foreign issuer current report'};
 function cleanText(html) {
   return html.replace(/<(script|style|ix:header)\b[^>]*>[\s\S]*?<\/\1>/gi,' ')
     .replace(/<\/(p|div|tr|h[1-6])\s*>|<br\s*\/?\s*>/gi,'\n')
@@ -36,8 +55,8 @@ function selectExcerpts(text, query='business revenue results risks management d
     .map((p,i)=>({id:`E${i+1}`,text:p.text}));
 }
 function parseFilings(data,ticker) {
-  const company=COMPANIES[ticker];
-  if(!company || String(Number(data.cik))!==company.cik || !data.tickers?.includes(ticker)) throw Error('SEC company identity could not be verified.');
+  const company=COMPANIES[normalizeTicker(ticker)];
+  if(!company || String(Number(data.cik))!==company.cik || !data.tickers?.some(t=>normalizeTicker(t)===normalizeTicker(ticker))) throw Error('SEC company identity could not be verified.');
   const r=data.filings?.recent;
   if(!Array.isArray(r?.form)) throw Error('SEC filing history unavailable.');
   const all=r.form.map((form,i)=>({form,accession:r.accessionNumber?.[i],filed:r.filingDate?.[i],reportDate:r.reportDate?.[i],document:r.primaryDocument?.[i]}))
@@ -47,8 +66,21 @@ function parseFilings(data,ticker) {
   const selected=[...new Map([...Object.keys(FORM_NAMES).map(form=>all.find(f=>f.form===form)).filter(Boolean),...all.slice(0,6)].map(f=>[f.accession,f])).values()];
   return {ticker,name:data.name,filings:selected.sort((a,b)=>b.filed.localeCompare(a.filed)),retrievedAt:new Date().toISOString()};
 }
+const normalizeName=value=>value.replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+const issuerNames=Object.values(COMPANIES).map(c=>({cik:c.cik,names:c.aliases.filter(a=>a!==c.ticker&&a.length>=4).map(normalizeName)}));
 function directMention(ticker,title) {
-  return (COMPANIES[ticker]?.aliases||[ticker]).some(a=>new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`,'i').test(title));
+  const company=COMPANIES[normalizeTicker(ticker)];
+  const words=` ${normalizeName(title)} `;
+  const explicitTicker=new RegExp(`\\b${ticker.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`).test(title);
+  if(explicitTicker && ticker.length>=2) return true;
+  return (company?.aliases||[]).some(alias=>{
+    if(alias===ticker)return false;
+    const name=normalizeName(alias);
+    if(!words.includes(` ${name} `))return false;
+    // A longer issuer name can identify a different listed company, e.g.
+    // Coca-Cola Consolidated (COKE), not Coca-Cola (KO).
+    return !issuerNames.some(other=>other.cik!==company.cik&&other.names.some(n=>n.length>name.length&&n.startsWith(name+' ')&&words.includes(` ${n} `)));
+  });
 }
 function classifyHeadline(ticker,article) {
   const title=String(article.title||'');
@@ -91,15 +123,33 @@ function createResearch({fetcher=fetch,market=require('./marketData'),generate=r
     const body=Buffer.concat(chunks).toString('utf8');return json?JSON.parse(body):body;
   }
   async function filings(ticker) {
-    if(!COMPANIES[ticker]) return {ticker,unsupported:true,filings:[],message:'SEC research currently covers the 14 companies in the selector. Quotes may support additional symbols.'};
-    return submissions(ticker,async()=>{
-      try {return parseFilings(await secGet(`https://data.sec.gov/submissions/CIK${COMPANIES[ticker].cik.padStart(10,'0')}.json`),ticker);}
-      catch(error) {
-        const saved=snapshots[ticker];if(!saved)throw error;
-        const {documents:_documents,...metadata}=saved;
-        return {...metadata,cachedSnapshot:true,message:'Live SEC retrieval unavailable. Showing a verified saved snapshot; newer filings may exist.'};
-      }
-    });
+    const company=COMPANIES[normalizeTicker(ticker)];
+    const searchUrl=`https://www.sec.gov/edgar/browse/?CIK=${encodeURIComponent(company?.cik||ticker)}&owner=exclude`;
+    if(!company) return {ticker,unsupported:true,filings:[],searchUrl,message:'No issuer mapping was found in the SEC directory. This may be a fund, a non-SEC issuer, or a new/unknown ticker. Quote and news coverage are checked independently.'};
+    try {
+      return await submissions(ticker,async()=>{
+        try {return {...parseFilings(await secGet(`https://data.sec.gov/submissions/CIK${company.cik.padStart(10,'0')}.json`),ticker),searchUrl};}
+        catch(error) {
+          const saved=snapshots[normalizeTicker(ticker)];
+          if(saved){const {documents:_documents,...metadata}=saved;return {...metadata,ticker,searchUrl,cachedSnapshot:true,message:'Live SEC retrieval unavailable. Showing a verified saved snapshot; newer filings may exist.'};}
+          // The licensed market provider can supply original SEC document links
+          // when SEC blocks this hosting network. Never manufacture a document URL.
+          if(market.fetchCompanyFilings) {
+            const rows=await market.fetchCompanyFilings(ticker);
+            const valid=rows.filter(f=>FORM_NAMES[f.form] && /^\d{10}-\d{2}-\d{6}$/.test(f.accessNumber||'') && String(Number(f.cik))===company.cik).flatMap(f=>{
+              try {const url=new URL(f.reportUrl);if(url.protocol!=='https:'||url.hostname!=='www.sec.gov'||!url.pathname.startsWith(`/Archives/edgar/data/${company.cik}/${f.accessNumber.replace(/-/g,'')}/`))return [];
+                if(!/^\d{4}-\d{2}-\d{2}/.test(f.filedDate||''))return [];
+                return [{form:f.form,label:FORM_NAMES[f.form],accession:f.accessNumber,filed:f.filedDate.slice(0,10),reportDate:'',url:url.href}];
+              } catch {return [];}
+            }).sort((a,b)=>b.filed.localeCompare(a.filed));
+            if(valid.length) return {ticker,name:company.name,filings:[...new Map([...Object.keys(FORM_NAMES).map(form=>valid.find(f=>f.form===form)).filter(Boolean),...valid.slice(0,12)].map(f=>[f.accession,f])).values()].sort((a,b)=>b.filed.localeCompare(a.filed)),searchUrl,source:'Finnhub SEC filing index',retrievedAt:new Date().toISOString()};
+          }
+          throw error;
+        }
+      });
+    } catch {
+      return {ticker,name:company.name,filings:[],unavailable:true,searchUrl,message:'The filing provider is currently unavailable for this company. Open its official EDGAR library below. In-app excerpts and summaries require a retrieved document.'};
+    }
   }
   async function document(ticker,accession,query) {
     const data=await filings(ticker),filing=data.filings.find(f=>f.accession===accession);
@@ -147,4 +197,4 @@ function createResearch({fetcher=fetch,market=require('./marketData'),generate=r
   }
   return {filings,document,news,analyzeNews,analyzeFiling};
 }
-module.exports={COMPANIES,createResearch,parseFilings,cleanText,selectExcerpts,classifyHeadline,validateAnalysis};
+module.exports={COMPANIES,normalizeTicker,searchCompanies,createResearch,parseFilings,cleanText,selectExcerpts,classifyHeadline,validateAnalysis};
