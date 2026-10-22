@@ -46,3 +46,9 @@ test('verified SEC snapshot preserves original links and clearly labels stale re
  const r=createResearch({snapshots,fetcher:async()=>new Response('',{status:403}),market:{},generate:async()=>''});
  const list=await r.filings('AAPL');assert.equal(list.cachedSnapshot,true);assert.equal(list.capturedAt,capturedAt);assert.equal(list.documents,undefined);const evidence=await r.document('AAPL',filing.accession,'supplier risks');assert.equal(evidence.cachedSnapshot,true);assert.equal(evidence.filing.url,filing.url);assert.match(evidence.scope,/saved passages/);assert.ok(evidence.excerpts[0].text.includes('Supplier concentration'));
 });
+test('passage retrieval ranks operating evidence above repeated legal boilerplate',()=>{
+ const boilerplate='This report includes estimates and forward-looking statements concerning business revenue results and risks. '.repeat(5);
+ const operating='Revenue increased as demand for cloud services expanded, while supply constraints raised costs and created risks for business results. '.repeat(2);
+ const text=Array(6).fill(boilerplate).join('\n')+'\n'+operating;
+ assert.ok(selectExcerpts(text,'business revenue results risks').some(e=>e.text.includes('Revenue increased')));
+});

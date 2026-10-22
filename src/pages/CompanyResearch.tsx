@@ -70,7 +70,7 @@ export default function CompanyResearch({ticker,onNavigate,onFiling}:{ticker:str
   const quotes=useResource<Snapshot>(`/api/quotes?tickers=${encodeURIComponent(ticker)}`,60000);
   const filings=useResource<Filings>(`/api/research/${encodeURIComponent(ticker)}/filings`,3600000);
   const [input,setInput]=useState(ticker),[error,setError]=useState(''),[chosen,setChosen]=useState('');
-  const list=filings.data?.filings||[];const filing=list.find(f=>f.accession===chosen)||list.find(f=>f.form==='10-Q')||list[0];
+  const list=filings.data?.filings||[];const filing=list.find(f=>f.accession===chosen)||list.find(f=>f.form==='10-Q'||f.form==='10-K')||list[0];
   useEffect(()=>onFiling(filing?.accession||''),[filing?.accession,onFiling]);
   const quote=quotes.data?.quotes[0];const name=companies.data?.find(c=>c.ticker===ticker)?.name||ticker;
   return <div className="p-5 lg:p-8 space-y-7 max-w-[1100px] mx-auto">
