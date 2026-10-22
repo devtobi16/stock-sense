@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, TrendingUp, Zap, Clock } from 'lucide-react';
 import { Card, CardHeader, Badge } from '../components/ui';
 import { cn } from '../lib/utils';
 import type { PageId } from '../types';
-import { useLoadingMessage } from '../hooks/useLoadingMessage';
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 interface DashboardProps {
   onNavigate: (page: PageId, ticker?: string) => void;
@@ -18,52 +16,27 @@ interface MarketBrainData {
 }
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
-  const [data, setData] = useState<MarketBrainData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const loadingMessage = useLoadingMessage();
-
-  useEffect(() => {
-    const fetchMarketBrain = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/market-brain`);
-        if (!response.ok) throw new Error('Failed to fetch data');
-        const json = await response.json();
-        setData(json);
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load real-time market data. Is the backend running?');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMarketBrain();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="p-8 space-y-8 max-w-[1000px] mx-auto pb-20 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
-        <div className="text-sm font-medium text-slate-500 animate-pulse mt-4">{loadingMessage}</div>
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className="p-8 space-y-8 max-w-[1000px] mx-auto pb-20 flex flex-col items-center justify-center min-h-[60vh]">
-        <AlertTriangle size={32} className="text-red-500 mb-2" />
-        <div className="text-sm font-medium text-slate-700">{error}</div>
-      </div>
-    );
-  }
+  const market = useResource<{ quotes: Array<{ ticker: string; price: number; changePct: number; quotedAt: string | null }>; retrievedAt: string }>('/api/market-snapshot');
+  const insights = useResource<{ status: string; data: MarketBrainData | null }>('/api/market-insights', 300000);
+  const data = insights.data?.data || { contradictions: [], narrativeShifts: [], thesisChanges: [] };
   return (
     <div className="p-8 space-y-8 max-w-[1000px] mx-auto pb-20">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">Market Brain</h1>
         <p className="text-slate-500 mt-1">Global AI-driven market intelligence command center.</p>
       </motion.div>
+
+      <section aria-label="Market quotes" className="space-y-3">
+        <div className="flex justify-between text-sm"><span>Market snapshot</span><button onClick={() => void market.refresh()}>Refresh prices</button></div>
+        {market.error && <p role="status">{market.error} {market.data ? 'Showing the last successful snapshot.' : 'The server may be starting.'}</p>}
+        {!market.data && !market.error && <p role="status">Loading prices…</p>}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {market.data?.quotes.map(q => <button key={q.ticker} onClick={() => onNavigate('stock-detail', q.ticker)} className="bg-white border rounded-xl p-3 text-left"><strong>{q.ticker}</strong><p>${q.price.toFixed(2)}</p><p>{q.changePct?.toFixed(2)}%</p><small>{q.quotedAt ? new Date(q.quotedAt).toLocaleTimeString() : 'Quote time unavailable'}</small></button>)}
+        </div>
+        {market.data && <p className="text-xs text-slate-500">Fetched {new Date(market.data.retrievedAt).toLocaleTimeString()} · refreshes every minute while visible</p>}
+        {insights.error && <p role="status">AI insights unavailable. Prices remain available.</p>}
+        {!insights.data?.data && !insights.error && <p role="status">{insights.data?.status === 'unavailable' ? 'AI insights are temporarily unavailable.' : 'Preparing AI insights separately…'}</p>}
+      </section>
 
       {/* Narrative Shifts (High Priority) */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>

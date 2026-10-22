@@ -1,43 +1,16 @@
-import { motion } from 'framer-motion';
+import { useState } from 'react';
 import type { PageId } from '../types';
 import LeftSidebar from './LeftSidebar';
 import RightPanel from './RightPanel';
-
-interface AppShellProps {
-  activePage: PageId;
-  onNavigate: (page: PageId, ticker?: string) => void;
-  children: React.ReactNode;
-}
-
-const pageTransition = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -6 },
-  transition: { duration: 0.22, ease: "easeOut" } as any,
-};
-
-export default function AppShell({ activePage, onNavigate, children }: AppShellProps) {
-  return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#f9fafb]">
-      {/* Left Sidebar (Fixed) */}
-      <LeftSidebar activePage={activePage} onNavigate={onNavigate} />
-
-      {/* Center Panel (Scrollable Main Content) */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-[#f9fafb] border-r border-slate-200 shadow-[inset_-2px_0_12px_rgba(0,0,0,0.02)]">
-        <motion.div
-          key={activePage}
-          initial={pageTransition.initial}
-          animate={pageTransition.animate}
-          exit={pageTransition.exit}
-          transition={pageTransition.transition}
-          className="min-h-full max-w-[1000px] mx-auto"
-        >
-          {children}
-        </motion.div>
-      </main>
-
-      {/* Right Panel (Fixed Analyst Chat) */}
-      <RightPanel />
+interface AppShellProps { activePage:PageId; selectedTicker?:string; onNavigate:(page:PageId,ticker?:string)=>void; children:React.ReactNode }
+export default function AppShell({activePage,selectedTicker,onNavigate,children}:AppShellProps) {
+  const [panel,setPanel]=useState<'navigation'|'chat'|null>(null);
+  return <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-50">
+    <div className="lg:hidden flex justify-between border-b bg-white p-3 text-sm"><button onClick={()=>setPanel(panel==='navigation'?null:'navigation')}>☰ Navigation</button><strong>StockSense</strong><button onClick={()=>setPanel(panel==='chat'?null:'chat')}>{panel==='chat'?'Close chat':'Ask analyst'}</button></div>
+    <div className="flex flex-1 min-h-0 relative">
+      <div className={panel==='navigation'?'absolute left-0 top-0 bottom-0 z-20 shadow-xl overflow-auto':'hidden lg:block'}><LeftSidebar activePage={activePage} onNavigate={(page,ticker)=>{onNavigate(page,ticker);setPanel(null);}}/></div>
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">{children}</main>
+      <div className={panel==='chat'?'absolute right-0 top-0 bottom-0 z-20 shadow-xl bg-white':'hidden lg:block'}><RightPanel ticker={['stock-detail','stock-analysis','research-report'].includes(activePage)?selectedTicker:undefined}/></div>
     </div>
-  );
+  </div>;
 }

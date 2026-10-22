@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Bot, Send, Sparkles, ChevronRight, Minimize2, Maximize2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { API_BASE_URL } from '../config';
 
 const SUGGESTED_PROMPTS = [
-  'Explain recent movement',
-  'Summarize earnings impact',
+  'What should a beginner know about investing?',
+  'Explain AAPL’s daily price change',
+  'What is an earnings surprise?',
   'Compare AAPL and MSFT',
 ];
 
@@ -14,6 +14,7 @@ interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  failed?: boolean;
   structured?: {
     summary?: string;
     reasoning?: string[];
@@ -26,18 +27,23 @@ const initialMessages: ChatMessage[] = [
   {
     id: '1',
     role: 'assistant',
-    content: "Hi, I'm MarketMind Analyst. Ask me to explain market movements, summarize earnings, or deep dive into any stock's narrative.",
+    content: "Hi, I'm MarketMind Analyst. Ask about investing basics, compare stocks, or explore the supplied market quotes and headlines. I remember recent messages in this tab.",
   }
 ];
 
-export default function RightPanel() {
+export default function RightPanel({ ticker }: { ticker?: string }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => { try { const saved = JSON.parse(sessionStorage.getItem('stocksense_chat') || 'null'); return Array.isArray(saved) ? [initialMessages[0], ...saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-40)] : initialMessages; } catch { return initialMessages; } });
+  useEffect(() => { try { sessionStorage.setItem('stocksense_chat', JSON.stringify(messages.filter(m => m.id !== '1').slice(-40))); } catch { /* Storage can be disabled. */ } }, [messages]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const sending = useRef(false);
+  const bottom = useRef<HTMLDivElement>(null);
+  useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
 
   const handleSend = async (text: string = input) => {
-    if (!text.trim()) return;
+    if (!text.trim() || sending.current) return;
+    sending.current = true;
     
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
@@ -47,29 +53,39 @@ export default function RightPanel() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
+        signal: AbortSignal.timeout(45000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: text,
-          context: {} // We'll pass context if needed, empty for now
+          context: { ticker },
+          history: messages.filter(m => m.id !== '1' && !m.failed).slice(-40).map(({ role, content }) => ({ role, content }))
         })
       });
       
       const data = await res.json();
+      if (!res.ok || typeof data.reply !== 'string' || !data.reply.trim()) {
+        throw new Error(data.error || 'The analyst returned an empty response. Please try again.');
+      }
       
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: data.reply
       };
+      if (data.context?.omittedTickers?.length) aiMsg.content += `\n\nLive data was limited to four symbols. Not fetched: ${data.context.omittedTickers.join(', ')}.`;
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Sorry, the AI backend is currently unreachable.'
+        failed: true,
+        content: error instanceof Error && error.name === 'TimeoutError'
+          ? 'The analyst took too long to respond. Please try again.'
+          : error instanceof Error ? error.message : 'The analyst could not answer right now. Please try again in a moment.'
       };
       setMessages(prev => [...prev, errorMsg]);
     } finally {
+      sending.current = false;
       setIsTyping(false);
     }
   };
@@ -84,7 +100,7 @@ export default function RightPanel() {
   }
 
   return (
-    <aside className="w-[340px] min-w-[340px] h-screen bg-white border-l border-slate-200 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)]">
+    <aside className="w-[340px] min-w-[340px] h-full bg-white border-l border-slate-200 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)]">
       {/* Header */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
         <div className="flex items-center gap-2">
@@ -94,19 +110,18 @@ export default function RightPanel() {
           </div>
           <div className="font-semibold text-sm text-slate-800">MarketMind Analyst</div>
         </div>
-        <button onClick={() => setCollapsed(true)} className="text-slate-400 hover:text-slate-700 p-1">
+        <button disabled={isTyping} onClick={() => setMessages(initialMessages)} className="text-xs text-slate-500">New chat</button>
+        <button aria-label="Collapse analyst" onClick={() => setCollapsed(true)} className="text-slate-400 hover:text-slate-700 p-1">
           <Minimize2 size={14} />
         </button>
       </div>
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        <AnimatePresence>
+        <>
           {messages.map((msg) => (
-            <motion.div
+            <div
               key={msg.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
               className={cn("flex flex-col", msg.role === 'user' ? 'items-end' : 'items-start')}
             >
               {msg.role === 'user' ? (
@@ -116,7 +131,7 @@ export default function RightPanel() {
               ) : (
                 <div className="w-full">
                   {msg.content && (
-                    <div className="text-sm text-slate-700 mb-3">{msg.content}</div>
+                    <div className="text-sm text-slate-700 mb-3 whitespace-pre-wrap break-words">{msg.content}</div>
                   )}
                   {msg.structured && (
                     <div className="space-y-3 bg-[#f8fafb] border border-slate-100 rounded-xl p-3.5">
@@ -171,16 +186,17 @@ export default function RightPanel() {
                   )}
                 </div>
               )}
-            </motion.div>
+            </div>
           ))}
           {isTyping && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-1.5 items-center text-green-700 py-2">
+            <div className="flex gap-1.5 items-center text-green-700 py-2">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        </>
+        <div ref={bottom} />
       </div>
 
       {/* Input Area */}
@@ -190,6 +206,7 @@ export default function RightPanel() {
           {SUGGESTED_PROMPTS.map((prompt) => (
             <button
               key={prompt}
+              disabled={isTyping}
               onClick={() => handleSend(prompt)}
               className="text-[10px] font-medium px-2.5 py-1 rounded-full border border-slate-200 text-slate-600 hover:border-green-300 hover:text-green-700 hover:bg-green-50 transition-colors"
             >
@@ -200,10 +217,12 @@ export default function RightPanel() {
         
         <div className="relative">
           <textarea
+            aria-label="Message the analyst"
+            maxLength={4000}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 handleSend(input);
               }
@@ -214,7 +233,8 @@ export default function RightPanel() {
           />
           <button
             onClick={() => handleSend(input)}
-            disabled={!input.trim()}
+            aria-label="Send message"
+            disabled={!input.trim() || isTyping}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-green-600 disabled:opacity-50 transition-colors"
           >
             <Send size={16} />

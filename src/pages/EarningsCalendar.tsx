@@ -1,17 +1,16 @@
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Clock, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { Card } from '../components/ui';
 import { cn } from '../lib/utils';
 import { useLoadingMessage } from '../hooks/useLoadingMessage';
 
-type DateGroup = 'Today' | 'Tomorrow' | 'This Week';
-const groups: DateGroup[] = ['Today', 'Tomorrow', 'This Week'];
+type DateGroup = 'Today' | 'Tomorrow' | 'Later';
+const groups: DateGroup[] = ['Today', 'Tomorrow', 'Later'];
 
 const groupBadge: Record<DateGroup, string> = {
   'Today': 'text-green-700 bg-green-100 border-green-200',
   'Tomorrow': 'text-blue-700 bg-blue-100 border-blue-200',
-  'This Week': 'text-slate-600 bg-slate-100 border-slate-200',
+  'Later': 'text-slate-600 bg-slate-100 border-slate-200',
 };
 
 const timeColors: Record<string, string> = {
@@ -20,48 +19,19 @@ const timeColors: Record<string, string> = {
   'During Market': 'text-green-700 bg-green-50 border-green-200',
 };
 
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function EarningsCalendar() {
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<any[]>('/api/earnings-calendar', 300000);
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   const loadingMessage = useLoadingMessage();
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/earnings-calendar`);
-        if (!res.ok) throw new Error('Failed to load earnings calendar');
-        const raw = await res.json();
-        
-        // Process dates into groups
-        const now = new Date();
-        const processed = raw.map((item: any) => {
-          const eDate = new Date(item.timestamp * 1000);
-          const diffDays = Math.round((eDate.getTime() - now.getTime()) / (1000 * 3600 * 24));
-          let group: DateGroup = 'This Week';
-          if (diffDays <= 0) group = 'Today';
-          else if (diffDays === 1) group = 'Tomorrow';
-
-          return {
-            ...item,
-            group,
-            time: 'After Close', // Mocked as YF free tier doesn't always have it
-            estimatedEPS: item.sector || (item.lastEPS * 1.1),
-            sector: 'Tech', // Mocked sector
-            expectedRevenue: 'Not reported'
-          };
-        });
-        setData(processed);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+  const data = (resource.data || []).map(item => {
+    const date = new Date(item.timestamp * 1000);
+    const today = new Date(); today.setHours(0,0,0,0); date.setHours(0,0,0,0);
+    const days = Math.round((date.getTime() - today.getTime()) / 86400000);
+    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'Later', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: typeof item.sector === 'string' ? item.sector : 'Not reported', expectedRevenue: Number.isFinite(item.expectedRevenue) ? new Intl.NumberFormat('en-US', {style:'currency',currency:'USD',notation:'compact',maximumFractionDigits:2}).format(item.expectedRevenue) : 'Not reported' };
+  });
 
   const grouped = groups.reduce((acc, g) => {
     acc[g] = data.filter((e) => e.group === g);
@@ -90,7 +60,7 @@ export default function EarningsCalendar() {
     <div className="p-6 space-y-5 max-w-[1400px]">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Earnings Calendar</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Upcoming earnings releases with estimates</p>
+        <p className="text-sm text-slate-500 mt-0.5">Upcoming releases for 14 selected US stocks. Source: Finnhub; dates and estimates may change.</p>
       </div>
 
       {/* Summary */}
@@ -98,7 +68,7 @@ export default function EarningsCalendar() {
         {[
           { label: 'Today', count: grouped['Today'].length, color: 'text-green-700', bg: 'bg-green-50 border-green-200' },
           { label: 'Tomorrow', count: grouped['Tomorrow'].length, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-          { label: 'This Week', count: grouped['This Week'].length, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
+          { label: 'Later', count: grouped['Later'].length, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
         ].map(({ label, count, color, bg }) => (
           <div key={label} className={cn('rounded-2xl border p-3 text-center', bg)}>
             <div className={cn('text-3xl font-bold', color)}>{count}</div>
@@ -124,14 +94,14 @@ export default function EarningsCalendar() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    {['Company', 'Sector', 'Time', 'Est. EPS', 'Last EPS', 'EPS Surprise', 'Est. Revenue'].map((h) => (
+                    {['Company', 'Sector', 'Time', 'Est. EPS', 'Reported EPS', 'EPS Surprise', 'Est. Revenue'].map((h) => (
                       <th key={h} className="text-[10px] text-slate-400 uppercase tracking-wider text-left pb-3 pr-4 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {entries.map((entry, i) => {
-                    const epsChange = ((entry.estimatedEPS - entry.lastEPS) / Math.abs(entry.lastEPS)) * 100;
+                    const epsChange = typeof entry.estimatedEPS === 'number' && typeof entry.actualEPS === 'number' && entry.estimatedEPS !== 0 ? ((entry.actualEPS - entry.estimatedEPS) / Math.abs(entry.estimatedEPS)) * 100 : NaN;
                     return (
                       <motion.tr
                         key={entry.ticker}
@@ -142,7 +112,7 @@ export default function EarningsCalendar() {
                       >
                         <td className="py-3 pr-4">
                           <div className="font-bold text-sm text-slate-800">{entry.ticker}</div>
-                          <div className="text-xs text-slate-400 max-w-[140px] truncate">{entry.company}</div>
+                          <div className="text-xs text-slate-400 max-w-[140px] truncate">{entry.date}</div>
                         </td>
                         <td className="py-3 pr-4">
                           <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full border border-green-200">
@@ -158,15 +128,15 @@ export default function EarningsCalendar() {
                           </div>
                         </td>
                         <td className="py-3 pr-4">
-                          <span className="text-sm font-semibold text-slate-800 mono">${entry.estimatedEPS.toFixed(2)}</span>
+                          <span className="text-sm font-semibold text-slate-800 mono">${(typeof entry.estimatedEPS === 'number' ? entry.estimatedEPS.toFixed(2) : '—')}</span>
                         </td>
                         <td className="py-3 pr-4">
-                          <span className="text-sm text-slate-400 mono">${entry.lastEPS.toFixed(2)}</span>
+                          <span className="text-sm text-slate-400 mono">${(typeof entry.actualEPS === 'number' ? entry.actualEPS.toFixed(2) : '—')}</span>
                         </td>
                         <td className="py-3 pr-4">
                           <div className={cn('flex items-center gap-1 text-xs font-semibold', epsChange >= 0 ? 'text-green-600' : 'text-red-600')}>
                             {epsChange >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                            {epsChange >= 0 ? '+' : ''}{epsChange.toFixed(1)}%
+                            {Number.isFinite(epsChange) ? `${epsChange >= 0 ? '+' : ''}${epsChange.toFixed(1)}%` : 'Not reported'}
                           </div>
                         </td>
                         <td className="py-3">

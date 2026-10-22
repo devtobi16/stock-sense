@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Newspaper, ExternalLink, Clock, Filter, AlertCircle } from 'lucide-react';
 import { Card } from '../components/ui';
@@ -6,30 +6,18 @@ import { cn, getSentimentBadge } from '../lib/utils';
 
 type FilterType = 'All' | 'Positive' | 'Neutral' | 'Negative';
 
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function FinancialNews() {
-  const [news, setNews] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<any[]>('/api/financial-news', 300000);
+  const news = (resource.data ?? []).map((n: any, i: number) => ({ ...n, id: n.id || n.url || String(i), title: n.title || n.headline, sentiment: n.sentiment || 'Pending', summary: n.summary || 'AI summary is being prepared.' }));
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   
   const [filter, setFilter] = useState<FilterType>('All');
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/financial-news`);
-        if (!res.ok) throw new Error('Failed to fetch news');
-        setNews(await res.json());
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchNews();
-  }, []);
+
 
   const filtered = news.filter((n) => filter === 'All' ? true : n.sentiment === filter);
 

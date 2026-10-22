@@ -4,7 +4,7 @@ const cors = require('cors');
 const { 
   fetchMarketData, fetchTrendingSymbols, fetchHistoricalData, fetchTickerData,
   fetchDetailedQuote, fetchGlobalIndices, fetchGlobalNews, fetchEarningsCalendar,
-  fetchResearchData
+  fetchResearchData, fetchQuotes
 } = require('./services/marketData');
 const { 
   synthesizeMarketData, generateThesisCard, generateStockDetail, handleChat,
@@ -12,11 +12,22 @@ const {
   generateMacroOutlook, generateFinancialNewsSummary, generateResearchReport
 } = require('./services/aiSynthesizer');
 
+const { resolveChatContext, sanitizeHistory } = require('./services/chatContext');
+const { createAnalysisCache } = require('./services/analysisCache');
+const analysis = createAnalysisCache();
+const { createCache } = require('./services/requestCache');
+const cachedBrain = createCache(1, 5 * 60 * 1000);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
+app.use((req, res, next) => {
+  const started = performance.now();
+  const json = res.json.bind(res);
+  res.json = body => { res.setHeader('Server-Timing', `app;dur=${(performance.now() - started).toFixed(1)}`); return json(body); };
+  next();
+});
 
 // In-memory caches
 let caches = {
@@ -30,8 +41,8 @@ let caches = {
   financialNews: { data: null, time: 0 },
   earningsCalendar: { data: null, time: 0 },
 };
-const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours for stock quotes & basic news
-const CACHE_TTL_LONG = 24 * 60 * 60 * 1000; // 24 hours for heavy AI/Synthesizer calls
+const CACHE_TTL_MS = 60 * 1000; // Quote-bearing responses: one minute
+const CACHE_TTL_LONG = 5 * 60 * 1000; // 24 hours for heavy AI/Synthesizer calls
 
 const MOCK_PORTFOLIO = [
   { ticker: 'AAPL', alloc: 35 },
@@ -40,18 +51,22 @@ const MOCK_PORTFOLIO = [
   { ticker: 'TSLA', alloc: 20 },
 ];
 
+app.get('/api/market-snapshot', async (req, res) => {
+  const quotes = await fetchQuotes(await fetchTrendingSymbols());
+  res.json({ quotes, retrievedAt: new Date().toISOString() });
+});
+
+app.get('/api/market-insights', (req, res) => {
+  res.json(analysis('market-brain', async () => synthesizeMarketData(await fetchMarketData(await fetchTrendingSymbols()))));
+});
+
 app.get('/api/market-brain', async (req, res) => {
   try {
-    const now = Date.now();
-    if (caches.marketBrain.data && (now - caches.marketBrain.time < CACHE_TTL_MS)) {
-      return res.json(caches.marketBrain.data);
-    }
-
-    const trending = await fetchTrendingSymbols();
-    const rawMarketData = await fetchMarketData(trending);
-    const synthesizedInsights = await synthesizeMarketData(rawMarketData);
-
-    caches.marketBrain = { data: synthesizedInsights, time: now };
+    const synthesizedInsights = await cachedBrain('market-brain', async () => {
+      const trending = await fetchTrendingSymbols();
+      const rawMarketData = await fetchMarketData(trending);
+      return synthesizeMarketData(rawMarketData);
+    });
     res.json(synthesizedInsights);
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate market brain data' });
@@ -67,7 +82,7 @@ app.get('/api/portfolio', async (req, res) => {
       } catch (err) {}
     }
     const tickers = portfolioData.map(p => p.ticker);
-    const liveData = await fetchMarketData(tickers);
+    const liveData = await fetchQuotes(tickers);
     
     const enrichedPortfolio = portfolioData.map(p => {
       const live = liveData.find(d => d.ticker === p.ticker);
@@ -93,8 +108,8 @@ app.get('/api/thesis-feed', async (req, res) => {
     const rawMarketData = await fetchMarketData(trending);
     
     // Generate a card for each trending symbol concurrently
-    const promises = rawMarketData.map(data => generateThesisCard(data));
-    let cards = (await Promise.all(promises)).filter(c => c !== null);
+    const enriched = analysis('thesis-feed', () => Promise.all(rawMarketData.map(data => generateThesisCard(data))));
+    let cards = (enriched.data || []).filter(c => c !== null);
 
     // Map live prices onto the cards
     cards = cards.map(card => {
@@ -131,7 +146,7 @@ app.get('/api/stock/:ticker', async (req, res) => {
     if (!rawData) return res.status(404).json({ error: 'Stock not found' });
 
     // Try AI enrichment — if it fails, build a rich fallback from real data
-    const detail = await generateStockDetail(ticker, rawData);
+    const detail = analysis(`stock:${ticker}`, () => generateStockDetail(ticker, rawData)).data;
 
     const historyFormatted = (history || []).map(h => ({
       date: new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -145,17 +160,17 @@ app.get('/api/stock/:ticker', async (req, res) => {
           currentPrice: rawData.price,
           changePct: rawData.changePct,
           history: historyFormatted,
-          aiThesis: `${ticker} is currently trading at $${rawData.price?.toFixed(2)} (${rawData.changePct >= 0 ? '+' : ''}${rawData.changePct?.toFixed(2)}% today). Real-time market data is live. Quantitative performance indicators show stable trends.`,
-          timeline: newsData.slice(0, 4).map((n, i) => ({
+          aiThesis: `${ticker} is currently trading at $${rawData.price?.toFixed(2)}. AI analysis is being prepared separately.`,
+          timeline: newsData.slice(0, 4).map(n => ({
             date: n.time || 'Recent',
             title: n.source,
             description: n.headline,
-            sentiment: i % 3 === 0 ? 'bearish' : i % 2 === 0 ? 'bullish' : 'neutral'
+            sentiment: 'neutral'
           })),
           signals: [
             `Current price: $${rawData.price?.toFixed(2)}`,
             `Day change: ${rawData.changePct >= 0 ? '+' : ''}${rawData.changePct?.toFixed(2)}%`,
-            `Live price data sourced from Yahoo Finance`
+            `Price data sourced from Finnhub`
           ],
           noise: [
             'Short-term trading volume adjustments.',
@@ -172,19 +187,26 @@ app.get('/api/stock/:ticker', async (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
-  try {
-    const { message, context } = req.body;
-    // Get live data for context if a ticker is mentioned
-    let liveContext = { userContext: context };
-    if (context.ticker) {
-      liveContext.marketData = await fetchTickerData(context.ticker);
-    }
-    
-    const reply = await handleChat(message, liveContext);
-    res.json({ reply });
-  } catch (error) {
-    res.status(500).json({ error: 'Chat failed' });
+  const { message, context = {}, history = [] } = req.body || {};
+  if (typeof message !== 'string' || !message.trim() || message.length > 4000) {
+    return res.status(400).json({ error: 'Please send a message of 1–4000 characters.' });
   }
+  const turns = sanitizeHistory(history);
+  try {
+    const resolved = resolveChatContext(message, context || {}, turns);
+    const tickers = resolved.tickers;
+    const marketData = await fetchMarketData(tickers);
+    const liveContext = { marketData, requestedTickers: tickers, omittedTickers: resolved.omittedTickers, contextSource: resolved.source, retrievedAt: new Date().toISOString() };
+    const reply = await handleChat(message, liveContext, turns);
+    res.json({ reply, context: { tickers, omittedTickers: resolved.omittedTickers } });
+  } catch (error) {
+    res.status(503).json({ error: 'The analyst is temporarily unavailable. Please try again.' });
+  }
+});
+
+// Sidebar headlines do not need an AI summary before they can be displayed.
+app.get('/api/news-headlines', async (req, res) => {
+  res.json(await fetchGlobalNews());
 });
 
 app.get('/api/watchlist', async (req, res) => {
@@ -199,11 +221,11 @@ app.get('/api/watchlist', async (req, res) => {
     }
 
     const rawData = await fetchMarketData(tickers);
-    let aiData = await generateWatchlistBatch(rawData);
+    let aiData = analysis(`watchlist:${cacheKey}`, () => generateWatchlistBatch(rawData)).data;
     if (!aiData) aiData = [];
 
     const merged = rawData.map(raw => {
-      const ai = aiData.find(a => a.ticker === raw.ticker) || { recommendation: 'HOLD', confidence: 50 };
+      const ai = aiData.find(a => a.ticker === raw.ticker) || { recommendation: 'PENDING', confidence: 0 };
       return {
         ticker: raw.ticker,
         name: raw.ticker,
@@ -232,14 +254,14 @@ app.get('/api/compare', async (req, res) => {
     
     // We only pass basic quote to AI to save tokens
     const aiPayload = rawQuotes.map(q => q && q.quote ? { ticker: q.quote.symbol, price: q.quote.regularMarketPrice } : null).filter(Boolean);
-    let aiData = await generateCompareBatch(aiPayload);
+    let aiData = analysis(`compare:${tickers.join(',')}`, () => generateCompareBatch(aiPayload)).data;
     if (!aiData) aiData = [];
 
     const response = {};
     rawQuotes.forEach(raw => {
       if (!raw || !raw.quote) return;
       const t = raw.quote.symbol;
-      const ai = aiData.find(a => a.ticker === t) || { recommendation: 'HOLD', confidence: 50, newsSentiment: 'Neutral', technicalRating: 'Neutral', aiScore: [70, 72, 75, 74] };
+      const ai = aiData.find(a => a.ticker === t) || { recommendation: 'PENDING', confidence: 0, newsSentiment: 'Neutral', technicalRating: 'Neutral', aiScore: [70, 72, 75, 74] };
       const qs = raw.summary;
       
       const finData = qs.financialData || {};
@@ -315,14 +337,13 @@ app.get('/api/stock-analysis/:ticker', async (req, res) => {
 app.get('/api/market-overview', async (req, res) => {
   try {
     const now = Date.now();
-    if (caches.marketOverview.data && (now - caches.marketOverview.time < CACHE_TTL_LONG)) {
+    if (caches.marketOverview.data && (now - caches.marketOverview.time < CACHE_TTL_MS)) {
       return res.json(caches.marketOverview.data);
     }
-    const indices = await fetchGlobalIndices();
-    const news = await fetchGlobalNews();
-    const outlook = await generateMacroOutlook(news.slice(0, 5));
+    const [indices, news] = await Promise.all([fetchGlobalIndices(), fetchGlobalNews()]);
+    const outlook = analysis('macro', () => generateMacroOutlook(news.slice(0, 5))).data;
     
-    const result = { indices, news, outlook: outlook || 'Global markets are currently experiencing mixed trading conditions across major indices. Please check back later for AI-generated analysis.' };
+    const result = { indices, news, outlook: outlook || 'AI analysis is being prepared. Market data is available above.' };
     caches.marketOverview = { data: result, time: now };
     res.json(result);
   } catch (e) {
@@ -337,7 +358,7 @@ app.get('/api/financial-news', async (req, res) => {
       return res.json(caches.financialNews.data);
     }
     const news = await fetchGlobalNews();
-    const summarized = await generateFinancialNewsSummary(news.slice(0, 8));
+    const summarized = analysis('news', () => generateFinancialNewsSummary(news.slice(0, 8))).data;
     let result = summarized || news;
     
     // Robust unwrapping of AI array responses

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Search, ArrowLeft, TrendingUp, TrendingDown, Clock, Activity, BarChart2, FileText } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { motion } from 'framer-motion';
@@ -6,7 +6,7 @@ import { Card, CardHeader, Badge } from '../components/ui';
 import NarrativeTimeline from '../components/ui/NarrativeTimeline';
 import type { PageId } from '../types';
 import { useLoadingMessage } from '../hooks/useLoadingMessage';
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 interface StockDetailProps {
   initialTicker?: string;
@@ -14,37 +14,16 @@ interface StockDetailProps {
 }
 
 export default function StockDetail({ initialTicker = 'AAPL', onNavigate }: StockDetailProps) {
-  const [ticker, setTicker] = useState(initialTicker);
+  const ticker = initialTicker;
   const [searchInput, setSearchInput] = useState('');
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<any>(`/api/stock/${encodeURIComponent(ticker)}`);
+  const data = resource.data ?? null;
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   const loadingMessage = useLoadingMessage();
 
-  useEffect(() => {
-    setTicker(initialTicker);
-  }, [initialTicker]);
 
-  useEffect(() => {
-    const fetchStockDetail = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/stock/${ticker}`);
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || 'Failed to fetch data');
-        }
-        setData(await res.json());
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message || `Failed to load data for ${ticker}.`);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStockDetail();
-  }, [ticker]);
+
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

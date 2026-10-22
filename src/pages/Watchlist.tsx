@@ -12,7 +12,7 @@ const ADDABLE_STOCKS = ['TSLA', 'AMZN', 'META', 'GOOGL', 'NFLX', 'AMD', 'INTC', 
 interface WatchlistProps {
   onNavigate: (page: PageId, ticker?: string) => void;
 }
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function Watchlist({ onNavigate }: WatchlistProps) {
   const [tickers, setTickers] = useState<string[]>(() => {
@@ -20,37 +20,14 @@ export default function Watchlist({ onNavigate }: WatchlistProps) {
     return saved ? JSON.parse(saved) : ['AAPL', 'MSFT', 'NVDA', 'TSLA'];
   });
   
-  const [items, setItems] = useState<WatchlistItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<WatchlistItem[]>(`/api/watchlist?tickers=${tickers.join(',')}`, 60000, tickers.length > 0);
+  const items = tickers.length ? (resource.data ?? []) : [];
+  const loading = tickers.length > 0 && !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   const [showAddPanel, setShowAddPanel] = useState(false);
   const loadingMessage = useLoadingMessage();
 
-  useEffect(() => {
-    localStorage.setItem('stocksense_watchlist', JSON.stringify(tickers));
-    
-    if (tickers.length === 0) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/watchlist?tickers=${tickers.join(',')}`);
-        if (!res.ok) throw new Error('Failed to fetch data');
-        setItems(await res.json());
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load watchlist data.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [tickers]);
+  useEffect(() => { localStorage.setItem('stocksense_watchlist', JSON.stringify(tickers)); }, [tickers]);
 
   const remove = (ticker: string) => setTickers(tickers.filter(t => t !== ticker));
   const add = (ticker: string) => {
