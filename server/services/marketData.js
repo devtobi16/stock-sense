@@ -1,4 +1,4 @@
-const FINNHUB_KEY = process.env.FINNHUB_API_KEY || 'd969j21r01qsd323k0q0d969j21r01qsd323k0qg';
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
 
 const { createCache } = require('./requestCache');
 const cachedRequest = createCache(300, 60 * 1000);
@@ -18,20 +18,29 @@ function getPastDate(days) {
   return d.toISOString().split('T')[0];
 }
 
+async function fetchQuote(ticker) {
+  try {
+    const q = await fetchFinnhub(`/quote?symbol=${encodeURIComponent(ticker)}`);
+    if (!Number.isFinite(q.c) || q.c <= 0) return null;
+    return { ticker, price: q.c, changePct: q.dp, quotedAt: q.t ? new Date(q.t * 1000).toISOString() : null };
+  } catch { return null; }
+}
+
+async function fetchQuotes(tickers) { return (await Promise.all(tickers.map(fetchQuote))).filter(Boolean); }
+
 async function fetchTickerData(ticker) {
   try {
     const today = new Date().toISOString().split('T')[0];
     const oneWeekAgo = getPastDate(7);
     
     const [quote, news] = await Promise.all([
-      fetchFinnhub(`/quote?symbol=${ticker}`),
-      fetchFinnhub(`/company-news?symbol=${ticker}&from=${oneWeekAgo}&to=${today}`)
+      fetchQuote(ticker),
+      fetchFinnhub(`/company-news?symbol=${encodeURIComponent(ticker)}&from=${oneWeekAgo}&to=${today}`).catch(() => [])
     ]);
     
+    if (!quote) return null;
     return {
-      ticker,
-      price: quote.c,
-      changePct: quote.dp,
+      ...quote,
       news: (Array.isArray(news) ? news : []).slice(0, 5).map(n => ({
         title: n.headline,
         publisher: n.source,
@@ -211,5 +220,5 @@ async function fetchResearchData(ticker) {
 module.exports = { 
   fetchMarketData, fetchTickerData, fetchTrendingSymbols, fetchHistoricalData,
   fetchDetailedQuote, fetchGlobalIndices, fetchGlobalNews, fetchEarningsCalendar,
-  fetchResearchData
+  fetchResearchData, fetchQuote, fetchQuotes
 };

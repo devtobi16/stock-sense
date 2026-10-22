@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Clock, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { Card } from '../components/ui';
@@ -20,48 +19,19 @@ const timeColors: Record<string, string> = {
   'During Market': 'text-green-700 bg-green-50 border-green-200',
 };
 
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function EarningsCalendar() {
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<any[]>('/api/earnings-calendar', 300000);
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   const loadingMessage = useLoadingMessage();
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/earnings-calendar`);
-        if (!res.ok) throw new Error('Failed to load earnings calendar');
-        const raw = await res.json();
-        
-        // Process dates into groups
-        const now = new Date();
-        const processed = raw.map((item: any) => {
-          const eDate = new Date(item.timestamp * 1000);
-          const diffDays = Math.round((eDate.getTime() - now.getTime()) / (1000 * 3600 * 24));
-          let group: DateGroup = 'This Week';
-          if (diffDays <= 0) group = 'Today';
-          else if (diffDays === 1) group = 'Tomorrow';
-
-          return {
-            ...item,
-            group,
-            time: 'After Close', // Mocked as YF free tier doesn't always have it
-            estimatedEPS: item.sector || (item.lastEPS * 1.1),
-            sector: 'Tech', // Mocked sector
-            expectedRevenue: 'Not reported'
-          };
-        });
-        setData(processed);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+  const data = (resource.data || []).map(item => {
+    const date = new Date(item.timestamp * 1000);
+    const today = new Date(); today.setHours(0,0,0,0); date.setHours(0,0,0,0);
+    const days = Math.round((date.getTime() - today.getTime()) / 86400000);
+    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'This Week', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: item.sector || 'Not reported', expectedRevenue: item.expectedRevenue || 'Not reported' };
+  });
 
   const grouped = groups.reduce((acc, g) => {
     acc[g] = data.filter((e) => e.group === g);
@@ -158,15 +128,15 @@ export default function EarningsCalendar() {
                           </div>
                         </td>
                         <td className="py-3 pr-4">
-                          <span className="text-sm font-semibold text-slate-800 mono">${entry.estimatedEPS.toFixed(2)}</span>
+                          <span className="text-sm font-semibold text-slate-800 mono">${(typeof entry.estimatedEPS === 'number' ? entry.estimatedEPS.toFixed(2) : '—')}</span>
                         </td>
                         <td className="py-3 pr-4">
-                          <span className="text-sm text-slate-400 mono">${entry.lastEPS.toFixed(2)}</span>
+                          <span className="text-sm text-slate-400 mono">${(typeof entry.lastEPS === 'number' ? entry.lastEPS.toFixed(2) : '—')}</span>
                         </td>
                         <td className="py-3 pr-4">
                           <div className={cn('flex items-center gap-1 text-xs font-semibold', epsChange >= 0 ? 'text-green-600' : 'text-red-600')}>
                             {epsChange >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                            {epsChange >= 0 ? '+' : ''}{epsChange.toFixed(1)}%
+                            {Number.isFinite(epsChange) ? `${epsChange >= 0 ? '+' : ''}${epsChange.toFixed(1)}%` : 'Not reported'}
                           </div>
                         </td>
                         <td className="py-3">

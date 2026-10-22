@@ -3,7 +3,7 @@ import { Home, List, Bell, Star, TrendingUp, TrendingDown, BookOpen, Calendar, N
 import type { PageId } from '../types';
 import { cn } from '../lib/utils';
 import { useLoadingMessage } from '../hooks/useLoadingMessage';
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 interface LeftSidebarProps {
   activePage: PageId;
@@ -18,8 +18,6 @@ interface Alert {
 }
 
 export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps) {
-  const [portfolio, setPortfolio] = useState<Array<{ ticker: string; alloc: number; pl: number }>>([]);
-  const [loadingPortfolio, setLoadingPortfolio] = useState(true);
   const [showEditPortfolio, setShowEditPortfolio] = useState(false);
   const [newTicker, setNewTicker] = useState('');
   const [newAlloc, setNewAlloc] = useState(10);
@@ -40,8 +38,16 @@ export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps
     }
   });
 
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loadingAlerts, setLoadingAlerts] = useState(true);
+  const portfolioState = useResource<Array<{ ticker: string; alloc: number; pl: number }>>(`/api/portfolio?data=${encodeURIComponent(JSON.stringify(portfolioItems))}`);
+  const portfolio = portfolioState.data || [];
+  const loadingPortfolio = !portfolioState.data && !portfolioState.error;
+  const earningsState = useResource<any[]>('/api/earnings-calendar', 300000);
+  const newsState = useResource<any[]>('/api/news-headlines', 300000);
+  const loadingAlerts = !earningsState.data && !newsState.data && !earningsState.error && !newsState.error;
+  const alerts: Alert[] = [
+    ...(earningsState.data || []).slice(0, 2).map(e => ({ type: 'earnings' as const, text: `${e.company || e.ticker} earnings on ${e.date}`, time: e.date, ticker: e.ticker })),
+    ...(newsState.data || []).slice(0, 3).map(n => ({ type: 'news' as const, text: n.headline, time: n.time || 'Recent' })),
+  ];
   const loadingMessage = useLoadingMessage();
   const [watchlistTickers, setWatchlistTickers] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('stocksense_watchlist') || '[]'); } catch { return []; }
@@ -62,58 +68,6 @@ export default function LeftSidebar({ activePage, onNavigate }: LeftSidebarProps
     localStorage.setItem('stocksense_portfolio', JSON.stringify(items));
   };
 
-  useEffect(() => {
-    setLoadingPortfolio(true);
-    fetch(`${API_BASE_URL}/api/portfolio?data=${encodeURIComponent(JSON.stringify(portfolioItems))}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(setPortfolio)
-      .catch(() => {})
-      .finally(() => setLoadingPortfolio(false));
-  }, [portfolioItems]);
-
-  useEffect(() => {
-    // Build live alerts from earnings + top news
-    const buildAlerts = async () => {
-      try {
-        const [earningsRes, newsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/earnings-calendar`),
-          fetch(`${API_BASE_URL}/api/news-headlines`),
-        ]);
-        const earnings = earningsRes.ok ? await earningsRes.json() : [];
-        const news = newsRes.ok ? await newsRes.json() : [];
-
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-
-        const earningAlerts: Alert[] = earnings.slice(0, 3).map((e: any) => {
-          const earningDate = new Date(e.timestamp * 1000);
-          const isToday = earningDate.toDateString() === today.toDateString();
-          const isTomorrow = earningDate.toDateString() === tomorrow.toDateString();
-          return {
-            type: 'earnings' as const,
-            text: `${e.company || e.ticker} earnings ${isToday ? 'today' : isTomorrow ? 'tomorrow' : `on ${e.date}`}`,
-            time: e.date,
-            ticker: e.ticker,
-          };
-        });
-
-        const newsAlerts: Alert[] = news.slice(0, 3).map((n: any) => ({
-          type: 'news' as const,
-          text: n.headline?.slice(0, 55) + (n.headline?.length > 55 ? '…' : ''),
-          time: n.time || 'Recent',
-        }));
-
-        // Interleave: earnings first, then news
-        setAlerts([...earningAlerts, ...newsAlerts].slice(0, 5));
-      } catch (e) {
-        console.error('Failed to load alerts');
-      } finally {
-        setLoadingAlerts(false);
-      }
-    };
-    buildAlerts();
-  }, []);
 
   return (
     <aside className="w-[260px] min-w-[260px] h-screen bg-white border-r border-slate-200 flex flex-col overflow-hidden">

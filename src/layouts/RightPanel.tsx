@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { API_BASE_URL } from '../config';
 
 const SUGGESTED_PROMPTS = [
+  'What should a beginner know about investing?',
   'Explain recent movement',
   'Summarize earnings impact',
   'Compare AAPL and MSFT',
@@ -32,7 +33,8 @@ const initialMessages: ChatMessage[] = [
 
 export default function RightPanel({ ticker }: { ticker?: string }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => { try { const saved = JSON.parse(sessionStorage.getItem('stocksense_chat') || 'null'); return Array.isArray(saved) ? [initialMessages[0], ...saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-40)] : initialMessages; } catch { return initialMessages; } });
+  useEffect(() => { try { sessionStorage.setItem('stocksense_chat', JSON.stringify(messages.filter(m => m.id !== '1').slice(-40))); } catch { /* Storage can be disabled. */ } }, [messages]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const sending = useRef(false);
@@ -56,7 +58,7 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
         body: JSON.stringify({ 
           message: text,
           context: { ticker },
-          history: messages.filter(m => m.id !== '1').slice(-10).map(({ role, content }) => ({ role, content }))
+          history: messages.filter(m => m.id !== '1').slice(-40).map(({ role, content }) => ({ role, content }))
         })
       });
       
@@ -70,6 +72,7 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
         role: 'assistant',
         content: data.reply
       };
+      if (data.context?.omittedTickers?.length) aiMsg.content += `\n\nLive data was limited to four symbols. Not fetched: ${data.context.omittedTickers.join(', ')}.`;
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
       const errorMsg: ChatMessage = {
@@ -106,6 +109,7 @@ export default function RightPanel({ ticker }: { ticker?: string }) {
           </div>
           <div className="font-semibold text-sm text-slate-800">MarketMind Analyst</div>
         </div>
+        <button disabled={isTyping} onClick={() => setMessages(initialMessages)} className="text-xs text-slate-500">New chat</button>
         <button onClick={() => setCollapsed(true)} className="text-slate-400 hover:text-slate-700 p-1">
           <Minimize2 size={14} />
         </button>

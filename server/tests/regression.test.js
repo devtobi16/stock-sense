@@ -50,7 +50,8 @@ function chatRoute(handleChat, fetchMarketData) {
       if (name === 'cors') return () => () => {};
       if (name === './services/marketData') return { fetchMarketData };
       if (name === './services/aiSynthesizer') return { handleChat };
-      if (name === './services/chatContext') return { chatTickers };
+      if (name === './services/chatContext') return require('../services/chatContext');
+      if (name === './services/analysisCache') return require('../services/analysisCache');
       if (name === './services/requestCache') return { createCache };
       throw Error(name);
     }, process: { env: {} }, console,
@@ -116,4 +117,14 @@ test('Gemini busy response falls through to a configured backup', async () => {
   });
   assert.equal(await analyst.handleChat('AAPL', {}), 'Recovered');
   assert.deepEqual(seen, ['busy', 'backup']);
+});
+test('beginner prompt includes goals and prior conversation without requiring a ticker', async () => {
+  let request;
+  const analyst = analystWithProviders({ gemini: async value => { request = value; return { text: 'Educational response' }; } });
+  const history = [{role:'user',content:'I need the money in six months and live in Nigeria.'}];
+  await analyst.handleChat('How does that change things?', {marketData:[]}, history);
+  assert.deepEqual(JSON.parse(request.contents).conversation, history);
+  assert.match(request.config.systemInstruction, /General investing education does not require a ticker/);
+  assert.match(request.config.systemInstruction, /Do not assume the user's country/);
+  assert.match(request.config.systemInstruction, /Do not call funds principal-protected/);
 });

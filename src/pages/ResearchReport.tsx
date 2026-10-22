@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { ArrowLeft, FileText, Download, ExternalLink, Activity, Target, ShieldAlert, CheckCircle2, TrendingUp, TrendingDown, FileBadge } from 'lucide-react';
 import { Card, CardHeader, Badge } from '../components/ui';
 import type { PageId } from '../types';
@@ -16,31 +15,16 @@ interface ResearchReportProps {
   onNavigate: (page: PageId, ticker?: string) => void;
 }
 
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function ResearchReport({ ticker = 'AAPL', onNavigate }: ResearchReportProps) {
-  const [report, setReport] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<any>(`/api/research-report/${encodeURIComponent(ticker)}`, 300000);
+  const report = resource.data ?? null;
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   const loadingMessage = useLoadingMessage();
 
-  useEffect(() => {
-    const fetchReport = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/research-report/${ticker}`);
-        if (!res.ok) throw new Error('Failed to fetch research report');
-        setReport(await res.json());
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message || 'Failed to load research report.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
-  }, [ticker]);
+
 
   const handlePrint = () => {
     window.print();

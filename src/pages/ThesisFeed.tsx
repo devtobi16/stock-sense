@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle } from 'lucide-react';
 import ThesisCard from '../components/ui/ThesisCard';
@@ -9,29 +8,16 @@ interface ThesisFeedProps {
   onNavigate: (page: PageId, ticker?: string) => void;
 }
 
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function ThesisFeed({ onNavigate }: ThesisFeedProps) {
-  const [cards, setCards] = useState<ThesisCardData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<ThesisCardData[]>('/api/thesis-feed', 60000);
+  const cards = resource.data ?? [];
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
   const loadingMessage = useLoadingMessage();
 
-  useEffect(() => {
-    const fetchCards = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/thesis-feed`);
-        if (!res.ok) throw new Error('Failed to fetch data');
-        setCards(await res.json());
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load dynamic thesis cards. Is the backend running?');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCards();
-  }, []);
+
 
   if (loading) {
     return (
@@ -46,7 +32,7 @@ export default function ThesisFeed({ onNavigate }: ThesisFeedProps) {
     return (
       <div className="p-8 max-w-[800px] mx-auto min-h-[60vh] flex flex-col items-center justify-center">
         <AlertCircle size={32} className="text-red-500 mb-2" />
-        <div className="text-sm font-medium text-slate-700">{error || 'No data found'}</div>
+        <div className="text-sm font-medium text-slate-700">{error || 'AI thesis cards are being prepared or are temporarily unavailable. This page refreshes automatically.'}</div>
       </div>
     );
   }

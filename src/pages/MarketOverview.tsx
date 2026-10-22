@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Globe, TrendingUp, TrendingDown, BarChart3, Activity, AlertCircle } from 'lucide-react';
 import {
@@ -17,27 +16,15 @@ const sentimentData = [
   { subject: 'Consumer', score: 67 },
   { subject: 'Industrial', score: 55 },
 ];
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 export default function MarketOverview() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<any>('/api/market-overview', 60000);
+  const data = resource.data ?? null;
+  const loading = !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/market-overview`);
-        if (!res.ok) throw new Error('Failed to load market overview');
-        setData(await res.json());
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+
 
   if (loading) {
     return (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Scale, BarChart3, TrendingUp, AlertCircle } from 'lucide-react';
 import {
@@ -9,7 +9,7 @@ import { Card, CardHeader } from '../components/ui';
 import { compareStocksData, revenueYears, generatePerfData } from '../data/mockData';
 import { cn, formatPrice, getRecommendationBadge, getSignalColor, getSentimentBadge } from '../lib/utils';
 import CircularProgress from '../components/charts/CircularProgress';
-import { API_BASE_URL } from '../config';
+import { useResource } from '../hooks/useResource';
 
 const AVAILABLE = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'META', 'AMD'];
 const COLORS = ['#16a34a', '#2563eb', '#d97706', '#dc2626'];
@@ -25,32 +25,12 @@ const METRICS = [
 
 export default function CompareStocks() {
   const [selected, setSelected] = useState<string[]>(['NVDA', 'AAPL']);
-  const [data, setData] = useState<Record<string, any>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const resource = useResource<Record<string, any>>(`/api/compare?tickers=${selected.join(',')}`, 60000, selected.length > 0);
+  const data = selected.length ? (resource.data ?? {}) : {};
+  const loading = selected.length > 0 && !resource.data && !resource.error;
+  const error = resource.data ? undefined : resource.error;
 
-  useEffect(() => {
-    if (selected.length === 0) {
-      setData({});
-      setLoading(false);
-      return;
-    }
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/compare?tickers=${selected.join(',')}`);
-        if (!res.ok) throw new Error('Failed to fetch data');
-        setData(await res.json());
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load comparison data.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [selected]);
+
 
   const add = (t: string) => {
     if (selected.length < 4 && !selected.includes(t)) setSelected([...selected, t]);

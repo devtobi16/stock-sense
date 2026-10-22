@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Bot, TrendingUp, Activity, BarChart3,
@@ -47,29 +47,36 @@ export default function StockAnalysis({ initialTicker = '', onNavigate }: StockA
   const [currentData, setCurrentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const analysisRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => analysisRequest.current?.abort(), []);
   const handleAnalyze = useCallback(async (sym?: string) => {
     const t = (sym || ticker).trim().toUpperCase();
     if (!t) return;
+    analysisRequest.current?.abort();
+    const request = new AbortController();
+    analysisRequest.current = request;
     setLoading(true);
     setAnalyzed(false);
     setError(null);
     setTicker(t);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/stock-analysis/${t}`);
+      const res = await fetch(`${API_BASE_URL}/api/stock-analysis/${encodeURIComponent(t)}`, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(45000)]) });
       if (!res.ok) {
         if (res.status === 503) {
-          throw new Error('AI rate limit exceeded. Please wait a minute and try again.');
+          throw new Error('AI analysis is temporarily unavailable. Please retry.');
         } else if (res.status === 404) {
           throw new Error(`Stock ${t} not found.`);
         }
         throw new Error('Failed to analyze stock.');
       }
-      setCurrentData(await res.json());
+      const result = await res.json();
+      if (request.signal.aborted) return;
+      setCurrentData(result);
       setAnalyzed(true);
     } catch (err: any) {
-      setError(err.message);
+      if (!request.signal.aborted) setError(err.message);
     } finally {
-      setLoading(false);
+      if (!request.signal.aborted) setLoading(false);
     }
   }, [ticker]);
 
