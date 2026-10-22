@@ -1,1 +1,2 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Deployed frontend and API share an origin; Vite proxies /api during development.
+export const API_BASE_URL = '';

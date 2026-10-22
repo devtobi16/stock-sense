@@ -6,7 +6,7 @@ const store = createResourceStore(async path => {
   // Explicit, client-only fault injection for the isolated PR preview.
   // This does not change the backend or affect other users or production.
   const diagnostic = new URLSearchParams(location.search);
-  if (API_BASE_URL === 'https://stock-sense-pr-1.onrender.com' && diagnostic.get('diagnostics') === '1' && diagnostic.get('sidebarFailure') === 'news' && path === '/api/news-headlines') {
+  if (location.hostname.includes('-git-') && diagnostic.get('diagnostics') === '1' && diagnostic.get('sidebarFailure') === 'news' && path === '/api/news-headlines') {
     throw Error('Simulated news failure (preview diagnostics).');
   }
   const response = await fetch(`${API_BASE_URL}${path}`, { signal: AbortSignal.timeout(path.startsWith('/api/research-report') ? 45000 : 15000) });

@@ -132,13 +132,13 @@ async function fetchGlobalIndices() {
     ];
     const quotes = await Promise.all(indices.map(i => fetchFinnhub(`/quote?symbol=${i.t}`).catch(() => null)));
     
-    return quotes.filter(q => q !== null).map((q, idx) => ({
+    return quotes.map((q, idx) => q && q.c > 0 ? ({
       name: indices[idx].name,
       ticker: indices[idx].t,
       value: q.c,
       change: q.d,
       changePct: q.dp
-    }));
+    }) : null).filter(Boolean);
   } catch (e) {
     return [];
   }
