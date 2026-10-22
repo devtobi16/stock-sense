@@ -1,156 +1,23 @@
-import { motion } from 'framer-motion';
-import { Calendar, Clock, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
-import { Card } from '../components/ui';
-import { cn } from '../lib/utils';
-import { useLoadingMessage } from '../hooks/useLoadingMessage';
-
-type DateGroup = 'Today' | 'Tomorrow' | 'Later';
-const groups: DateGroup[] = ['Today', 'Tomorrow', 'Later'];
-
-const groupBadge: Record<DateGroup, string> = {
-  'Today': 'text-green-700 bg-green-100 border-green-200',
-  'Tomorrow': 'text-blue-700 bg-blue-100 border-blue-200',
-  'Later': 'text-slate-600 bg-slate-100 border-slate-200',
-};
-
-const timeColors: Record<string, string> = {
-  'Before Open': 'text-amber-700 bg-amber-50 border-amber-200',
-  'After Close': 'text-blue-700 bg-blue-50 border-blue-200',
-  'During Market': 'text-green-700 bg-green-50 border-green-200',
-};
-
+import { useState } from 'react';
 import { useResource } from '../hooks/useResource';
 
+type Release={ticker:string;date:string;timestamp:number;time:string;estimatedEPS:number|null;actualEPS:number|null;expectedRevenue:number|null};
+const PAGE_SIZE=25;
+const money=(value:number|null)=>Number.isFinite(value)?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',notation:'compact',maximumFractionDigits:2}).format(value!):'Not reported';
 export default function EarningsCalendar() {
-  const resource = useResource<any[]>('/api/earnings-calendar', 300000);
-  const loading = !resource.data && !resource.error;
-  const error = resource.data ? undefined : resource.error;
-  const loadingMessage = useLoadingMessage();
-  const data = (resource.data || []).map(item => {
-    const date = new Date(item.timestamp * 1000);
-    const today = new Date(); today.setHours(0,0,0,0); date.setHours(0,0,0,0);
-    const days = Math.round((date.getTime() - today.getTime()) / 86400000);
-    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'Later', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: typeof item.sector === 'string' ? item.sector : 'Not reported', expectedRevenue: Number.isFinite(item.expectedRevenue) ? new Intl.NumberFormat('en-US', {style:'currency',currency:'USD',notation:'compact',maximumFractionDigits:2}).format(item.expectedRevenue) : 'Not reported' };
-  });
-
-  const grouped = groups.reduce((acc, g) => {
-    acc[g] = data.filter((e) => e.group === g);
-    return acc;
-  }, {} as Record<DateGroup, any[]>);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
-        <div className="text-sm font-medium text-slate-500 mt-4">{loadingMessage}</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 min-h-[60vh] text-red-500">
-        <AlertCircle size={32} className="mb-2" />
-        <div className="text-sm font-medium">{error}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6 space-y-5 max-w-[1400px]">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Earnings Calendar</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Upcoming releases for 14 selected US stocks. Source: Finnhub; dates and estimates may change.</p>
-      </div>
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Today', count: grouped['Today'].length, color: 'text-green-700', bg: 'bg-green-50 border-green-200' },
-          { label: 'Tomorrow', count: grouped['Tomorrow'].length, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-          { label: 'Later', count: grouped['Later'].length, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
-        ].map(({ label, count, color, bg }) => (
-          <div key={label} className={cn('rounded-2xl border p-3 text-center', bg)}>
-            <div className={cn('text-3xl font-bold', color)}>{count}</div>
-            <div className="text-xs text-slate-500 mt-0.5">{label} Earnings</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tables */}
-      {groups.map((group) => {
-        const entries = grouped[group];
-        if (entries.length === 0) return null;
-        return (
-          <Card key={group} className="p-4">
-            <div className="flex items-center gap-2 mb-4">
-              <Calendar size={15} className="text-green-600" />
-              <h3 className="text-base font-semibold text-slate-800">{group}'s Earnings</h3>
-              <span className={cn('text-xs font-semibold px-2.5 py-0.5 rounded-full border ml-2', groupBadge[group])}>
-                {entries.length} companies
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    {['Company', 'Sector', 'Time', 'Est. EPS', 'Reported EPS', 'EPS Surprise', 'Est. Revenue'].map((h) => (
-                      <th key={h} className="text-[10px] text-slate-400 uppercase tracking-wider text-left pb-3 pr-4 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry, i) => {
-                    const epsChange = typeof entry.estimatedEPS === 'number' && typeof entry.actualEPS === 'number' && entry.estimatedEPS !== 0 ? ((entry.actualEPS - entry.estimatedEPS) / Math.abs(entry.estimatedEPS)) * 100 : NaN;
-                    return (
-                      <motion.tr
-                        key={entry.ticker}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.04 }}
-                        className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="py-3 pr-4">
-                          <div className="font-bold text-sm text-slate-800">{entry.ticker}</div>
-                          <div className="text-xs text-slate-400 max-w-[140px] truncate">{entry.date}</div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full border border-green-200">
-                            {entry.sector}
-                          </span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div className="flex items-center gap-1.5">
-                            <Clock size={11} className="text-slate-400" />
-                            <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full border', timeColors[entry.time])}>
-                              {entry.time}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm font-semibold text-slate-800 mono">${(typeof entry.estimatedEPS === 'number' ? entry.estimatedEPS.toFixed(2) : '—')}</span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm text-slate-400 mono">${(typeof entry.actualEPS === 'number' ? entry.actualEPS.toFixed(2) : '—')}</span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <div className={cn('flex items-center gap-1 text-xs font-semibold', epsChange >= 0 ? 'text-green-600' : 'text-red-600')}>
-                            {epsChange >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                            {Number.isFinite(epsChange) ? `${epsChange >= 0 ? '+' : ''}${epsChange.toFixed(1)}%` : 'Not reported'}
-                          </div>
-                        </td>
-                        <td className="py-3">
-                          <span className="text-sm font-semibold text-slate-800">{entry.expectedRevenue}</span>
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })}
-    </div>
-  );
+  const resource=useResource<Release[]>('/api/earnings-calendar',300000);
+  const [query,setQuery]=useState(''),[page,setPage]=useState(1);
+  const rows=(resource.data||[]).filter(row=>row.ticker.toUpperCase().includes(query.trim().toUpperCase()));
+  const pages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  const current=Math.min(page,pages), visible=rows.slice((current-1)*PAGE_SIZE,current*PAGE_SIZE);
+  return <div className="p-6 space-y-5 max-w-[1400px]">
+    <header><h1 className="text-2xl font-bold text-slate-800">Earnings Calendar</h1><p className="text-sm text-slate-500 mt-1">Upcoming releases over the next 30 days across Finnhub’s returned coverage. Dates and estimates may change; coverage is not guaranteed for every security.</p></header>
+    <div className="flex flex-wrap gap-3 items-center"><label className="text-sm text-slate-600">Filter by ticker<input aria-label="Filter earnings by ticker" value={query} onChange={e=>{setQuery(e.target.value);setPage(1);}} placeholder="e.g. KO, COST, AAPL" className="block mt-1 px-3 py-2 border rounded-lg bg-white"/></label><button onClick={()=>void resource.refresh()} disabled={resource.loading} className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50">Refresh calendar</button></div>
+    {resource.error&&<p role="alert" className="text-sm text-amber-800">{resource.data?'Refresh failed. Showing the last loaded calendar.':resource.error}</p>}
+    {!resource.data&&!resource.error&&<p role="status">Loading earnings releases…</p>}
+    {resource.data&&<><p role="status" className="text-sm text-slate-500">{rows.length} matching releases · {resource.data.length} returned by provider · Dates shown as scheduled calendar dates.</p>
+    {!rows.length?<p className="border border-dashed rounded-xl p-6 text-slate-500">{query?'No releases match this ticker within the next 30 days.':'The provider returned no releases for the next 30 days.'}</p>:<div className="overflow-x-auto bg-white border rounded-xl"><table className="w-full text-sm"><caption className="sr-only">Upcoming earnings releases</caption><thead><tr className="text-left text-slate-500 border-b">{['Ticker','Date','Session','Estimated EPS','Reported EPS','Estimated revenue'].map(h=><th key={h} scope="col" className="p-3 whitespace-nowrap">{h}</th>)}</tr></thead><tbody>{visible.map((row,i)=><tr key={`${row.ticker}-${row.timestamp}-${i}`} className="border-b last:border-0"><th scope="row" className="p-3 text-left text-green-800">{row.ticker}</th><td className="p-3 whitespace-nowrap">{row.date}</td><td className="p-3 whitespace-nowrap">{row.time}</td><td className="p-3">{Number.isFinite(row.estimatedEPS)?`$${row.estimatedEPS!.toFixed(2)}`:'Not reported'}</td><td className="p-3">{Number.isFinite(row.actualEPS)?`$${row.actualEPS!.toFixed(2)}`:'Not reported'}</td><td className="p-3">{money(row.expectedRevenue)}</td></tr>)}</tbody></table></div>}
+    {rows.length>0&&<nav aria-label="Earnings pages" className="flex gap-3 items-center text-sm"><button disabled={current===1} onClick={()=>setPage(current-1)} className="border rounded-lg px-3 py-2 disabled:opacity-40">Previous</button><span>Page {current} of {pages}</span><button disabled={current===pages} onClick={()=>setPage(current+1)} className="border rounded-lg px-3 py-2 disabled:opacity-40">Next</button></nav>}
+    <p className="text-xs text-slate-400">Source: Finnhub. Cached across visitors and refreshed every five minutes while visible. Missing estimates are not treated as zero.</p></>}
+  </div>;
 }

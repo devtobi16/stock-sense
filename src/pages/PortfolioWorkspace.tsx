@@ -8,7 +8,7 @@ type News = {id?:string; headline:string; source:string; time:string; url:string
 const inputClass = 'rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white min-w-0';
 const buttonClass = 'rounded-lg bg-green-700 text-white px-4 py-2 text-sm font-semibold disabled:opacity-50';
 function safeLink(url:string) { try { return ['https:', 'http:'].includes(new URL(url).protocol) ? url : undefined; } catch { return undefined; } }
-function savedTickers() { try { const data=JSON.parse(localStorage.getItem('stocksense_watchlist') || '[]'); return Array.isArray(data) ? data.filter(t=>typeof t==='string' && /^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$/.test(t)).slice(0,5) : []; } catch { return []; } }
+function savedTickers() { try { const data=JSON.parse(localStorage.getItem('stocksense_watchlist') || '[]'); return Array.isArray(data) ? data.filter(t=>typeof t==='string' && /^[A-Z0-9]{1,10}(?:[.-][A-Z0-9]{1,4})?$/.test(t)).slice(0,5) : []; } catch { return []; } }
 export function NewsList({items}:{items:News[]}) {
   return <div className="space-y-3">{items.map((n,i)=><a key={n.id || n.url || i} href={safeLink(n.url)} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 rounded-xl p-4 hover:border-green-600"><p className="text-xs text-slate-500 mb-2">{n.source} · {n.time}</p><p className="font-medium text-slate-800">{n.headline}</p><span className="text-xs text-green-700 mt-2 inline-block">Read source ↗</span></a>)}</div>;
 }
@@ -32,7 +32,7 @@ export default function PortfolioWorkspace({page, ticker, onNavigate}:{page:Page
   const company=useResource<Quote & {news:{title:string;link:string;time:number}[]}>(`/api/company/${encodeURIComponent(selection)}`,300000,isCompany);
   function submit(e:React.FormEvent) {
     e.preventDefault(); const values=[...new Set(input.toUpperCase().split(/[\s,]+/).filter(Boolean))];
-    if(!values.length || values.some(t=>!(/^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$/).test(t)) || values.length>(isCompany?1:5)) {setValidation(isCompany?'Enter one ticker, such as AAPL.':'Enter up to five ticker symbols, separated by commas.');return;}
+    if(!values.length || values.some(t=>!(/^[A-Z0-9]{1,10}(?:[.-][A-Z0-9]{1,4})?$/).test(t)) || values.length>(isCompany?1:5)) {setValidation(isCompany?'Enter one ticker, such as AAPL.':'Enter up to five ticker symbols, separated by commas.');return;}
     setValidation('');
     if(isWatchlist) { const next=[...new Set([...watchlist,...values])];if(next.length>5){setValidation('This watchlist supports five symbols. Remove one before adding another.');return;} save(next);setInput(''); }
     else {setSelection(values.join(','));if(isCompany)onNavigate('stock-detail',values[0]);}

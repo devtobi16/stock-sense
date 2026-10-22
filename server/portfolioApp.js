@@ -1,14 +1,14 @@
 const express = require('express');
 const { resolveChatContext, sanitizeHistory } = require('./services/chatContext');
-const { createResearch, COMPANIES } = require('./services/companyResearch');
+const { createResearch, COMPANIES, searchCompanies, normalizeTicker } = require('./services/companyResearch');
 const { createChatBudget } = require('./services/chatBudget');
-const SYMBOL = /^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$/;
+const SYMBOL = /^[A-Z0-9]{1,10}(?:[.-][A-Z0-9]{1,4})?$/;
 const DEFAULTS = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN'];
 function symbols(value, fallback = DEFAULTS) {
   if (value === undefined) return fallback;
   if (typeof value !== 'string') throw Error('Use comma-separated ticker symbols.');
   const list = [...new Set(value.split(',').map(t => t.trim().toUpperCase()).filter(Boolean))];
-  if (list.length > 5 || list.some(t => !SYMBOL.test(t))) throw Error('Enter up to five valid US ticker symbols.');
+  if (list.length > 5 || list.some(t => !SYMBOL.test(t))) throw Error('Enter up to five valid ticker symbols.');
   return list;
 }
 function createApp({ market = require('./services/marketData'), handleChat = require('./services/aiSynthesizer').handleChat, budget = createChatBudget(), research } = {}) {
@@ -52,19 +52,19 @@ function createApp({ market = require('./services/marketData'), handleChat = req
   });
   app.get('/api/earnings-calendar', async (req,res) => {
     let data;
-    try { data = await market.fetchEarningsCalendar([...DEFAULTS,'META','GOOGL','NFLX','AMD','INTC','JPM','V','WMT','JNJ'], {strict:true}); }
+    try { data = await market.fetchEarningsCalendar(undefined, {strict:true}); }
     catch { return res.status(503).json({error:'The earnings calendar is temporarily unavailable.'}); }
     // Empty calendars are legitimate; short caching avoids hiding recovery for long.
     shared(res,data.length ? 300 : 30); res.json(data);
   });
-  app.get('/api/research/companies', (req,res)=>{shared(res,3600);res.json(Object.entries(COMPANIES).map(([ticker,c])=>({ticker,name:c.name})));});
+  app.get('/api/research/companies', (req,res)=>{shared(res,3600);res.json(searchCompanies(req.query.q));});
   app.get('/api/research/:ticker/:resource', async (req,res)=>{
     const ticker=req.params.ticker.toUpperCase(), kind=req.params.resource;
     if(!SYMBOL.test(ticker)) return res.status(400).json({error:'Invalid ticker.'});
     if(!['filings','news','news-analysis'].includes(kind)) return res.status(404).json({error:'Research endpoint not found.'});
     try {
       const data=await research[kind==='news-analysis'?'analyzeNews':kind](ticker);
-      shared(res,kind==='filings'?3600:300);res.json(data);
+      if(!data.unavailable)shared(res,kind==='filings'?3600:300);res.json(data);
     } catch(e) {console.warn('Research provider failure',kind,ticker,e.message);res.status(e.status===429?429:503).json({error:kind==='filings'?'SEC filings are temporarily unavailable. Please retry.':e.status===429?e.message:'Research is temporarily unavailable. Original sources remain available; please retry.'});}
   });
   app.get('/api/research/:ticker/filings/:accession/:action', async(req,res)=>{
@@ -84,15 +84,16 @@ function createApp({ market = require('./services/marketData'), handleChat = req
     const release = budget.acquire(estimate);
     if (!release) return res.status(429).set('Retry-After','60').json({error:'The analyst is busy or at its free usage limit. Please retry in a minute.'});
     try {
-      const filingQuestion=/\b(filing|10-k|10-q|8-k|annual report|quarterly report|sec|disclosure)\b/i.test(message) || (context.filing && resolved.tickers.includes(context.ticker));
+      const filingQuestion=/\b(filing|10-k|10-q|8-k|20-f|40-f|6-k|annual report|quarterly report|sec|disclosure)\b/i.test(message) || (context.filing && resolved.tickers.includes(context.ticker));
       // Acronyms like SEC are not stock symbols. The selected company anchors filing questions.
-      const focus=resolved.tickers.find(t=>COMPANIES[t]) || (COMPANIES[context.ticker]?context.ticker:null);
+      const focus=resolved.tickers.find(t=>COMPANIES[normalizeTicker(t)]) || (COMPANIES[normalizeTicker(context.ticker)]?context.ticker:null);
       const evidenceTask=filingQuestion && focus ? (async()=>{
         try {
           const list=await research.filings(focus);
-          const form=/10-k|annual/i.test(message)?'10-K':/8-k|current report/i.test(message)?'8-K':'10-Q';
-          const explicitForm=/10-k|10-q|8-k|annual report|quarterly report|current report/i.test(message);
-          const chosen=(explicitForm?list.filings.find(f=>f.form===form):list.filings.find(f=>f.accession===context.filing)) || list.filings.find(f=>f.form===form) || list.filings[0];
+          const explicit=message.match(/\b(10-k|10-q|8-k|20-f|40-f|6-k)\b/i)?.[1].toUpperCase();
+          const form=explicit||(/annual/i.test(message)?list.filings.find(f=>['10-K','20-F','40-F'].includes(f.form))?.form:/current report/i.test(message)?list.filings.find(f=>['8-K','6-K'].includes(f.form))?.form:'10-Q');
+          const explicitForm=/10-k|10-q|8-k|20-f|40-f|6-k|annual report|quarterly report|current report/i.test(message);
+          const chosen=explicitForm?list.filings.find(f=>f.form===form):(list.filings.find(f=>f.accession===context.filing) || list.filings.find(f=>f.form===form) || list.filings[0]);
           return chosen?await research.document(focus,chosen.accession,message):{unavailable:'No SEC filing returned.'};
         } catch {return {unavailable:'SEC document excerpts are currently unavailable. Do not infer filing contents.'};}
       })():Promise.resolve(null);

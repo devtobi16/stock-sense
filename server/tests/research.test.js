@@ -27,7 +27,7 @@ test('explicit AI news requests reuse cached analysis and honor shared quota gua
  let calls=0;const market={fetchCompanyNews:async()=>[{title:'Apple raises guidance',link:'https://example.com/a'}]};const generate=async({prompt})=>{calls++;const id=JSON.parse(prompt.split('Headlines: ')[1])[0].id;return JSON.stringify({items:[{id,label:'Positive',reason:'Higher guidance suggests stronger expected operating performance.'}]});};const r=createResearch({market,generate,budget:{acquire:()=>()=>{}}});assert.equal((await r.analyzeNews('AAPL')).articles[0].method,'AI headline analysis');await r.analyzeNews('AAPL');assert.equal(calls,1);const denied=createResearch({market,generate,budget:{acquire:()=>null}});await assert.rejects(()=>denied.analyzeNews('AAPL'),e=>e.status===429);assert.equal(calls,1);
 });
 test('SEC failure is explicit and never cached as an empty successful library',async()=>{
- let calls=0;const r=createResearch({snapshots:{},fetcher:async()=>{calls++;return new Response('',{status:503});},market:{},generate:async()=>''});await assert.rejects(()=>r.filings('AAPL'));await assert.rejects(()=>r.filings('AAPL'));assert.equal(calls,2);
+ let calls=0;const r=createResearch({snapshots:{},fetcher:async()=>{calls++;return new Response('',{status:503});},market:{},generate:async()=>''});assert.equal((await r.filings('AAPL')).unavailable,true);assert.equal((await r.filings('AAPL')).unavailable,true);assert.equal(calls,2);
 });
 test('filing follow-ups use selected company rather than interpreting SEC as a ticker',()=>{
  assert.deepEqual(resolveChatContext('What risks does this SEC filing disclose?',{ticker:'AAPL'},[]).tickers,['AAPL']);

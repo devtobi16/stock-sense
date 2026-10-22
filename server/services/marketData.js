@@ -176,14 +176,14 @@ async function fetchEarningsCalendar(tickers, { strict = false } = {}) {
     const calendar = await fetchFinnhub(`/calendar/earnings?from=${today}&to=${nextMonth}`);
     
     const earnings = calendar.earningsCalendar || [];
-    const relevant = earnings.filter(e => tickers.includes(e.symbol));
+    const relevant = earnings.filter(e => typeof e.symbol==='string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date||'') && e.date>=today && e.date<=nextMonth && (!tickers || tickers.includes(e.symbol)));
     
     return relevant.map(q => {
       const earnDate = new Date(q.date);
       return {
         ticker: q.symbol,
         company: q.symbol,
-        date: earnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        date: earnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone:'UTC' }),
         timestamp: Math.floor(earnDate.getTime() / 1000),
         actualEPS: Number.isFinite(q.epsActual) ? q.epsActual : null,
         estimatedEPS: Number.isFinite(q.epsEstimate) ? q.epsEstimate : null,
@@ -235,3 +235,11 @@ async function fetchCompanyNews(ticker) {
   return data.slice(0,60).filter(n=>typeof n.headline==='string' && typeof n.url==='string').map(n=>({title:n.headline,link:n.url,publisher:n.source||'Finnhub',time:n.datetime*1000}));
 }
 module.exports.fetchCompanyNews=fetchCompanyNews;
+
+// One bounded request per issuer, shared by the provider cache.
+async function fetchCompanyFilings(ticker) {
+  const rows=await fetchFinnhub(`/stock/filings?symbol=${encodeURIComponent(ticker)}&from=${getPastDate(550)}&to=${getPastDate(0)}`);
+  if(!Array.isArray(rows))throw Error('Filing index unavailable');
+  return rows;
+}
+module.exports.fetchCompanyFilings=fetchCompanyFilings;
