@@ -63,3 +63,9 @@ The home page connects quotes, SEC filings, and explained news-impact labels for
 - SEC requests use a declared StockSense User-Agent (override with SEC_USER_AGENT), timeouts, a 6 MB document limit and per-instance pacing. Account-wide enforcement remains with the providers; the app is intended for a modest portfolio audience, not unrestricted production traffic.
 
 Tests cover issuer/path validation, evidence extraction, relevance and mixed sentiment, malformed model output, cache coalescing, provider failures and chat filing context. Provider integration still requires live preview checks.
+
+### SEC availability and saved snapshots
+
+SEC may reject requests from a hosting network. The app therefore includes bounded, source-attributed snapshots of verified submission metadata and selected passages from each supported issuer's latest available 10-K, 10-Q and 8-K. These are real filing passages, not invented examples. When live retrieval fails, the UI labels the snapshot and capture time; it does not claim the list is current. Older documents still link to SEC but may not have saved passages.
+
+Run `npm run refresh:sec` from an environment permitted to retrieve SEC data, review `server/data/secSnapshots.json`, and commit it to refresh this fallback. Failed retrievals preserve the previous snapshot. This command is manual, not a scheduled refresh; an old snapshot can miss newer filings. No API keys or AI calls are needed.

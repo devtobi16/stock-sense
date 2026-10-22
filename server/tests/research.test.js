@@ -18,7 +18,7 @@ test('AI news validation rejects fabricated IDs, incomplete results, invalid lab
  assert.throws(()=>validateAnalysis({items:[]},[a]));assert.throws(()=>validateAnalysis({items:[{id:'fake',label:'Positive',reason:'A plausible but invented reason.'}]},[a]));assert.throws(()=>validateAnalysis({items:[{id:a.id,label:'BUY',reason:'A plausible but invented reason.'}]},[a]));const r=validateAnalysis({items:[{id:a.id,label:'Positive',reason:'A plausible but invented reason.'}]},[a]);assert.equal(r[0].label,'Neutral');
 });
 test('SEC metadata is coalesced and reused, unsupported symbols make no request',async()=>{
- let calls=0;const service=createResearch({fetcher:async()=>{calls++;return new Response(JSON.stringify(data));},market:{},generate:async()=>''});const [a,b]=await Promise.all([service.filings('AAPL'),service.filings('AAPL')]);assert.deepEqual(a,b);assert.equal(calls,1);assert.equal((await service.filings('ZZZZ')).unsupported,true);assert.equal(calls,1);await assert.rejects(()=>service.document('AAPL','0000320193-26-999999'));
+ let calls=0;const service=createResearch({snapshots:{},fetcher:async()=>{calls++;return new Response(JSON.stringify(data));},market:{},generate:async()=>''});const [a,b]=await Promise.all([service.filings('AAPL'),service.filings('AAPL')]);assert.deepEqual(a,b);assert.equal(calls,1);assert.equal((await service.filings('ZZZZ')).unsupported,true);assert.equal(calls,1);await assert.rejects(()=>service.document('AAPL','0000320193-26-999999'));
 });
 test('news is ticker-filtered, independent of quote availability, and cached without AI',async()=>{
  let calls=0,ai=0;const service=createResearch({market:{fetchCompanyNews:async()=>{calls++;return [{title:'Apple raises guidance',link:'https://example.com/a'},{title:'Microsoft cuts forecast',link:'https://example.com/b'}];}},generate:async()=>{ai++;return '';}});const n=await service.news('AAPL');assert.equal(n.articles.length,1);assert.equal(n.unconfirmed.length,1);await service.news('AAPL');assert.equal(calls,1);assert.equal(ai,0);
@@ -27,7 +27,7 @@ test('explicit AI news requests reuse cached analysis and honor shared quota gua
  let calls=0;const market={fetchCompanyNews:async()=>[{title:'Apple raises guidance',link:'https://example.com/a'}]};const generate=async({prompt})=>{calls++;const id=JSON.parse(prompt.split('Headlines: ')[1])[0].id;return JSON.stringify({items:[{id,label:'Positive',reason:'Higher guidance suggests stronger expected operating performance.'}]});};const r=createResearch({market,generate,budget:{acquire:()=>()=>{}}});assert.equal((await r.analyzeNews('AAPL')).articles[0].method,'AI headline analysis');await r.analyzeNews('AAPL');assert.equal(calls,1);const denied=createResearch({market,generate,budget:{acquire:()=>null}});await assert.rejects(()=>denied.analyzeNews('AAPL'),e=>e.status===429);assert.equal(calls,1);
 });
 test('SEC failure is explicit and never cached as an empty successful library',async()=>{
- let calls=0;const r=createResearch({fetcher:async()=>{calls++;return new Response('',{status:503});},market:{},generate:async()=>''});await assert.rejects(()=>r.filings('AAPL'));await assert.rejects(()=>r.filings('AAPL'));assert.equal(calls,2);
+ let calls=0;const r=createResearch({snapshots:{},fetcher:async()=>{calls++;return new Response('',{status:503});},market:{},generate:async()=>''});await assert.rejects(()=>r.filings('AAPL'));await assert.rejects(()=>r.filings('AAPL'));assert.equal(calls,2);
 });
 test('filing follow-ups use selected company rather than interpreting SEC as a ticker',()=>{
  assert.deepEqual(resolveChatContext('What risks does this SEC filing disclose?',{ticker:'AAPL'},[]).tickers,['AAPL']);
@@ -39,4 +39,10 @@ test('chat receives server-fetched filing evidence and exposes its original sour
  const app=createApp({market:{fetchMarketData:async()=>[]},budget:{acquire:()=>()=>{}},research:{filings:async()=>({filings:[evidence.filing]}),document:async()=>evidence},handleChat:async(q,c)=>{received=c;return 'Supported answer [E1].';}});
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>server.close(r)));
  const response=await fetch(`http://127.0.0.1:${server.address().port}/api/chat`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:'What risks does this SEC filing disclose?',context:{ticker:'AAPL',filing:evidence.filing.accession}})});const body=await response.json();assert.equal(response.status,200);assert.deepEqual(received.filingEvidence.excerpts,evidence.excerpts);assert.equal(body.sources[0].url,evidence.filing.url);assert.equal(response.headers.get('cache-control'),'no-store');
+});
+test('verified SEC snapshot preserves original links and clearly labels stale retrieval',async()=>{
+ const original=parseFilings(data,'AAPL');const filing=original.filings[1];const capturedAt='2026-08-01T00:00:00Z';
+ const snapshots={AAPL:{...original,capturedAt,documents:{[filing.accession]:{url:filing.url,capturedAt,text:('Supplier concentration creates operational risks and may impact future business results. ').repeat(3)}}}};
+ const r=createResearch({snapshots,fetcher:async()=>new Response('',{status:403}),market:{},generate:async()=>''});
+ const list=await r.filings('AAPL');assert.equal(list.cachedSnapshot,true);assert.equal(list.capturedAt,capturedAt);assert.equal(list.documents,undefined);const evidence=await r.document('AAPL',filing.accession,'supplier risks');assert.equal(evidence.cachedSnapshot,true);assert.equal(evidence.filing.url,filing.url);assert.match(evidence.scope,/saved passages/);assert.ok(evidence.excerpts[0].text.includes('Supplier concentration'));
 });
