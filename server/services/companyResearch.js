@@ -29,6 +29,7 @@ function cleanText(html) {
 }
 function selectExcerpts(text, query='business revenue results risks management discussion') {
   const terms=[...new Set(query.toLowerCase().match(/[a-z]{4,}/g)||[])].filter(t=>!['what','that','this','from','filing','latest','summarize','explain','about','does','with'].includes(t));
+  if(!terms.length) terms.push('revenue','results','risk','business');
   const pieces=text.split('\n').flatMap(p=>p.length>1400?p.match(/.{1,1000}(?:\s|$)/g)||[]:[p]).filter(p=>p.length>100 && /[a-z]{4}/i.test(p));
   return pieces.map((p,i)=>({text:p.slice(0,900),position:i,score:terms.reduce((n,t)=>n+(p.toLowerCase().includes(t)?1:0),0)-(p.includes('.....')?10:0)}))
     .sort((a,b)=>b.score-a.score||a.position-b.position).slice(0,4).sort((a,b)=>a.position-b.position)

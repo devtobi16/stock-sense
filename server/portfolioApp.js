@@ -65,7 +65,7 @@ function createApp({ market = require('./services/marketData'), handleChat = req
     try {
       const data=await research[kind==='news-analysis'?'analyzeNews':kind](ticker);
       shared(res,kind==='filings'?3600:300);res.json(data);
-    } catch(e) {res.status(e.status===429?429:503).json({error:kind==='filings'?'SEC filings are temporarily unavailable. Please retry.':e.status===429?e.message:'Research is temporarily unavailable. Original sources remain available; please retry.'});}
+    } catch(e) {console.warn('Research provider failure',kind,ticker,e.message);res.status(e.status===429?429:503).json({error:kind==='filings'?'SEC filings are temporarily unavailable. Please retry.':e.status===429?e.message:'Research is temporarily unavailable. Original sources remain available; please retry.'});}
   });
   app.get('/api/research/:ticker/filings/:accession/:action', async(req,res)=>{
     const ticker=req.params.ticker.toUpperCase(),{accession,action}=req.params;
@@ -91,7 +91,8 @@ function createApp({ market = require('./services/marketData'), handleChat = req
         try {
           const list=await research.filings(focus);
           const form=/10-k|annual/i.test(message)?'10-K':/8-k|current report/i.test(message)?'8-K':'10-Q';
-          const chosen=list.filings.find(f=>f.accession===context.filing) || list.filings.find(f=>f.form===form) || list.filings[0];
+          const explicitForm=/10-k|10-q|8-k|annual report|quarterly report|current report/i.test(message);
+          const chosen=(explicitForm?list.filings.find(f=>f.form===form):list.filings.find(f=>f.accession===context.filing)) || list.filings.find(f=>f.form===form) || list.filings[0];
           return chosen?await research.document(focus,chosen.accession,message):{unavailable:'No SEC filing returned.'};
         } catch {return {unavailable:'SEC document excerpts are currently unavailable. Do not infer filing contents.'};}
       })():Promise.resolve(null);
