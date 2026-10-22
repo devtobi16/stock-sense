@@ -169,7 +169,7 @@ async function fetchGlobalNews() {
   }
 }
 
-async function fetchEarningsCalendar(tickers) {
+async function fetchEarningsCalendar(tickers, { strict = false } = {}) {
   try {
     const today = new Date().toISOString().split('T')[0];
     const nextMonth = getPastDate(-30);
@@ -193,6 +193,7 @@ async function fetchEarningsCalendar(tickers) {
       };
     }).sort((a, b) => a.timestamp - b.timestamp);
   } catch (e) {
+    if (strict) throw e;
     return [];
   }
 }

@@ -30,7 +30,7 @@ export default function EarningsCalendar() {
     const date = new Date(item.timestamp * 1000);
     const today = new Date(); today.setHours(0,0,0,0); date.setHours(0,0,0,0);
     const days = Math.round((date.getTime() - today.getTime()) / 86400000);
-    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'Later', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: typeof item.sector === 'string' ? item.sector : 'Not reported', expectedRevenue: item.expectedRevenue ?? 'Not reported' };
+    return { ...item, group: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'Later', time: item.time || 'Not reported', estimatedEPS: item.estimatedEPS ?? 'Not reported', sector: typeof item.sector === 'string' ? item.sector : 'Not reported', expectedRevenue: Number.isFinite(item.expectedRevenue) ? new Intl.NumberFormat('en-US', {style:'currency',currency:'USD',notation:'compact',maximumFractionDigits:2}).format(item.expectedRevenue) : 'Not reported' };
   });
 
   const grouped = groups.reduce((acc, g) => {

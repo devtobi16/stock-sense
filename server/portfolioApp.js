@@ -49,7 +49,9 @@ function createApp({ market = require('./services/marketData'), handleChat = req
     shared(res,300); res.json(news);
   });
   app.get('/api/earnings-calendar', async (req,res) => {
-    const data = await market.fetchEarningsCalendar([...DEFAULTS,'META','GOOGL','NFLX','AMD','INTC','JPM','V','WMT','JNJ']);
+    let data;
+    try { data = await market.fetchEarningsCalendar([...DEFAULTS,'META','GOOGL','NFLX','AMD','INTC','JPM','V','WMT','JNJ'], {strict:true}); }
+    catch { return res.status(503).json({error:'The earnings calendar is temporarily unavailable.'}); }
     // Empty calendars are legitimate; short caching avoids hiding recovery for long.
     shared(res,data.length ? 300 : 30); res.json(data);
   });
