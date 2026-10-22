@@ -66,12 +66,20 @@ function parseFilings(data,ticker) {
   const selected=[...new Map([...Object.keys(FORM_NAMES).map(form=>all.find(f=>f.form===form)).filter(Boolean),...all.slice(0,6)].map(f=>[f.accession,f])).values()];
   return {ticker,name:data.name,filings:selected.sort((a,b)=>b.filed.localeCompare(a.filed)),retrievedAt:new Date().toISOString()};
 }
+const normalizeName=value=>value.replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+const issuerNames=Object.values(COMPANIES).map(c=>({cik:c.cik,names:c.aliases.filter(a=>a!==c.ticker&&a.length>=4).map(normalizeName)}));
 function directMention(ticker,title) {
-  const clean=value=>value.replace(/[^a-z0-9]+/gi,' ').trim();
-  const words=` ${clean(title).toLowerCase()} `;
-  return (COMPANIES[normalizeTicker(ticker)]?.aliases||[ticker]).some(alias=>{
-    if(alias===ticker) return new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`).test(title);
-    return words.includes(` ${clean(alias).toLowerCase()} `);
+  const company=COMPANIES[normalizeTicker(ticker)];
+  const words=` ${normalizeName(title)} `;
+  const explicitTicker=new RegExp(`\\b${ticker.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`).test(title);
+  if(explicitTicker && ticker.length>=2) return true;
+  return (company?.aliases||[]).some(alias=>{
+    if(alias===ticker)return false;
+    const name=normalizeName(alias);
+    if(!words.includes(` ${name} `))return false;
+    // A longer issuer name can identify a different listed company, e.g.
+    // Coca-Cola Consolidated (COKE), not Coca-Cola (KO).
+    return !issuerNames.some(other=>other.cik!==company.cik&&other.names.some(n=>n.length>name.length&&n.startsWith(name+' ')&&words.includes(` ${n} `)));
   });
 }
 function classifyHeadline(ticker,article) {
@@ -134,7 +142,7 @@ function createResearch({fetcher=fetch,market=require('./marketData'),generate=r
                 return [{form:f.form,label:FORM_NAMES[f.form],accession:f.accessNumber,filed:f.filedDate.slice(0,10),reportDate:'',url:url.href}];
               } catch {return [];}
             }).sort((a,b)=>b.filed.localeCompare(a.filed));
-            if(valid.length) return {ticker,name:company.name,filings:valid.slice(0,12),searchUrl,source:'Finnhub SEC filing index',retrievedAt:new Date().toISOString()};
+            if(valid.length) return {ticker,name:company.name,filings:[...new Map([...Object.keys(FORM_NAMES).map(form=>valid.find(f=>f.form===form)).filter(Boolean),...valid.slice(0,12)].map(f=>[f.accession,f])).values()].sort((a,b)=>b.filed.localeCompare(a.filed)),searchUrl,source:'Finnhub SEC filing index',retrievedAt:new Date().toISOString()};
           }
           throw error;
         }

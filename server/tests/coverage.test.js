@@ -22,6 +22,7 @@ test('unknown and unavailable issuers have distinct honest coverage messages',as
  const blocked=await service.filings('KO');assert.equal(blocked.unavailable,true);assert.match(blocked.searchUrl,/CIK=21344/);assert.deepEqual(blocked.filings,[]);
 });
 test('broader news matches company names across punctuation without common-word ticker matches',()=>{
+ assert.equal(classifyHeadline('KO',{title:'Coca-Cola Consolidated raises guidance',link:'https://example.com'}).relevance,'Unconfirmed');
  assert.equal(classifyHeadline('KO',{title:'Coca-Cola raises guidance',link:'https://example.com'}).label,'Positive');
  assert.equal(classifyHeadline('COST',{title:'Costco raises guidance',link:'https://example.com'}).label,'Positive');
  assert.equal(classifyHeadline('COST',{title:'Airlines face cost increases',link:'https://example.com'}).relevance,'Unconfirmed');
@@ -35,8 +36,14 @@ test('calendar route requests broad coverage and company search does not send fu
  const r=await fetch(base+'/api/earnings-calendar');assert.deepEqual(await r.json(),[{ticker:'KO'}]);assert.equal(selected,undefined);
  const companies=await (await fetch(base+'/api/research/companies?q=COST')).json();assert.equal(companies[0].ticker,'COST');assert.ok(companies.length<=20);
 });
-test('calendar retains non-demo releases, zero estimates and UTC dates with one provider request',async()=>{
+test('calendar retains non-demo releases, zero estimates and UTC dates with bounded weekly provider requests',async()=>{
  const original=global.fetch;let calls=0;const date=new Date().toISOString().slice(0,10);
  global.fetch=async()=>{calls++;return new Response(JSON.stringify({earningsCalendar:[{symbol:'KO',date,epsEstimate:0,hour:'bmo'},{symbol:'COST',date,epsActual:2},{symbol:'BAD',date:'invalid'}]}));};
- try {const {fetchEarningsCalendar}=require('../services/marketData');const rows=await fetchEarningsCalendar(undefined,{strict:true});assert.deepEqual(rows.map(r=>r.ticker),['KO','COST']);assert.equal(rows[0].estimatedEPS,0);assert.equal(rows[1].estimatedEPS,null);assert.equal(calls,1);}finally{global.fetch=original;}
+ try {const {fetchEarningsCalendar}=require('../services/marketData');const rows=await fetchEarningsCalendar(undefined,{strict:true});assert.deepEqual(rows.map(r=>r.ticker),['KO','COST']);assert.equal(rows[0].estimatedEPS,0);assert.equal(rows[1].estimatedEPS,null);assert.equal(calls,5);}finally{global.fetch=original;}
+});
+test('capped earnings windows split, preserve nearer dates and limit concurrent requests',async()=>{
+ const original=global.fetch;let active=0,peak=0,calls=0;
+ delete require.cache[require.resolve('../services/marketData')];
+ global.fetch=async url=>{active++;peak=Math.max(peak,active);calls++;await new Promise(r=>setTimeout(r,1));active--;const p=new URL(url).searchParams,from=p.get('from'),to=p.get('to');return new Response(JSON.stringify({earningsCalendar:(Date.parse(to)-Date.parse(from)>3*86400000)?Array(1500).fill({symbol:'LATE',date:to}):[{symbol:'NEAR',date:from}]}));};
+ try {const rows=await require('../services/marketData').fetchEarningsCalendar(undefined,{strict:true});assert.equal(rows[0].ticker,'NEAR');assert.equal(rows[0].timestamp*1000,Date.parse(new Date().toISOString().slice(0,10)+'T00:00:00Z'));assert.ok(calls>5);assert.ok(peak<=2);}finally{global.fetch=original;delete require.cache[require.resolve('../services/marketData')];}
 });
